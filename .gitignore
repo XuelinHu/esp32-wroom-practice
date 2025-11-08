@@ -14,7 +14,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
 lib64/
 parts/
 sdist/
@@ -116,7 +115,7 @@ ipython_config.py
 #pdm.toml
 .pdm-python
 .pdm-build/
-
+.idea
 # pixi
 #   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
 #pixi.lock
