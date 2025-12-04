@@ -204,3 +204,26 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# ESP32/MicroPython specific (keeping ESP32_GENERIC*.bin firmware)
+*.hex
+*.elf
+*.map
+*.o
+*.a
+# Allow ESP32 firmware files
+!ESP32_GENERIC*.bin
+
+# Claude configuration
+.claude/
+.claude_desktop_config.json
+.claude_code_session_*.json
+
+# macOS system files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
