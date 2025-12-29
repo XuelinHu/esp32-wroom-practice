@@ -488,6 +488,14 @@ def show_menu():
     print("6. 全舵机测试")
     print("7. 校准模式")
 
+    print("\n🕷️ 腿部单独调试:")
+    print("31. 前左腿 (FL) 调试 - GPIO 13,14,16")
+    print("32. 前右腿 (FR) 调试 - GPIO 17,18,19")
+    print("33. 后左腿 (BL) 调试 - GPIO 21,22,23")
+    print("34. 后右腿 (BR) 调试 - GPIO 25,26,27")
+    print("35. 所有腿顺序调试")
+    print("36. 自定义GPIO调试")
+
     print("\n🚶 步态控制:")
     print("11. 波浪步态 (从FL开始)")
     print("12. 波浪步态 (从FR开始)")
@@ -517,6 +525,154 @@ def get_user_input():
         return 0
     except:
         return -1
+
+# ======================
+# 腿部单独调试函数
+# ======================
+def debug_leg_by_gpio(hip_gpio, thigh_gpio, knee_gpio, speed_ms=500):
+    """
+    通用腿部调试函数 - 通过GPIO编号控制一条腿的三个关节
+    hip_gpio: 髋关节GPIO编号
+    thigh_gpio: 大腿关节GPIO编号
+    knee_gpio: 膝关节GPIO编号
+    speed_ms: 动作速度 (毫秒)
+    """
+    try:
+        # 查找对应的舵机标识
+        hip_servo = GPIO_TO_SERVO.get(hip_gpio)
+        thigh_servo = GPIO_TO_SERVO.get(thigh_gpio)
+        knee_servo = GPIO_TO_SERVO.get(knee_gpio)
+
+        leg_name = "未知"
+        for leg, config in LEGS_CONFIG.items():
+            if config.get('HIP') == hip_gpio:
+                leg_name = leg
+                break
+
+        print(f"\n🔧 开始调试 {leg_name} 腿 (GPIO: {hip_gpio}, {thigh_gpio}, {knee_gpio})")
+
+        # 速度档位设置
+        speeds = {
+            'slow': 800,    # 慢速
+            'fast': 300     # 快速
+        }
+
+        current_speed = speed_ms if speed_ms in speeds.values() else speeds['fast']
+        speed_desc = '慢速' if current_speed >= 600 else '快速'
+
+        print(f"🎯 角度控制在30度左右，速度: {speed_desc}")
+
+        # 调试序列 - 30度左右的角度变化
+        debug_sequence = [
+            # (髋角度, 大腿角度, 膝盖角度, 描述)
+            (90, 90, 90, "初始中间位置"),
+            (75, 75, 75, "向内收缩约15度"),
+            (105, 105, 105, "向外伸展约15度"),
+            (90, 120, 60, "大腿后摆+膝盖弯曲"),
+            (90, 60, 120, "大腿前摆+膝盖伸直"),
+            (90, 90, 90, "回到中间位置")
+        ]
+
+        for hip_angle, thigh_angle, knee_angle, desc in debug_sequence:
+            print(f"  📍 {desc}: HIP={hip_angle}° THIGH={thigh_angle}° KNEE={knee_angle}°")
+
+            # 分别控制三个关节
+            if hip_servo and hip_servo in servos:
+                leg, joint = hip_servo.split('_', 1)
+                set_servo_angle(leg, joint, hip_angle, current_speed)
+                print(f"    ✅ {hip_servo}(GPIO{hip_gpio}) -> {hip_angle}°")
+
+            if thigh_servo and thigh_servo in servos:
+                leg, joint = thigh_servo.split('_', 1)
+                set_servo_angle(leg, joint, thigh_angle, current_speed)
+                print(f"    ✅ {thigh_servo}(GPIO{thigh_gpio}) -> {thigh_angle}°")
+
+            if knee_servo and knee_servo in servos:
+                leg, joint = knee_servo.split('_', 1)
+                set_servo_angle(leg, joint, knee_angle, current_speed)
+                print(f"    ✅ {knee_servo}(GPIO{knee_gpio}) -> {knee_angle}°")
+
+            time.sleep(current_speed / 1000.0 + 0.5)  # 动作时间+暂停
+
+        print(f"✅ {leg_name} 腿调试完成")
+        return True
+
+    except Exception as e:
+        print(f"❌ 腿部调试失败: {e}")
+        return False
+
+def debug_leg_fl(speed='fast'):
+    """调试前左腿 (FL) - GPIO 13, 14, 16"""
+    speed_ms = 800 if speed == 'slow' else 300
+    print("\n🕷️ 调试前左腿 (FL)")
+    return debug_leg_by_gpio(13, 14, 16, speed_ms)
+
+def debug_leg_fr(speed='fast'):
+    """调试前右腿 (FR) - GPIO 17, 18, 19"""
+    speed_ms = 800 if speed == 'slow' else 300
+    print("\n🕷️ 调试前右腿 (FR)")
+    return debug_leg_by_gpio(17, 18, 19, speed_ms)
+
+def debug_leg_bl(speed='fast'):
+    """调试后左腿 (BL) - GPIO 21, 22, 23"""
+    speed_ms = 800 if speed == 'slow' else 300
+    print("\n🕷️ 调试后左腿 (BL)")
+    return debug_leg_by_gpio(21, 22, 23, speed_ms)
+
+def debug_leg_br(speed='fast'):
+    """调试后右腿 (BR) - GPIO 25, 26, 27"""
+    speed_ms = 800 if speed == 'slow' else 300
+    print("\n🕷️ 调试后右腿 (BR)")
+    return debug_leg_by_gpio(25, 26, 27, speed_ms)
+
+def debug_all_legs_sequentially(speed='fast'):
+    """顺序调试所有四条腿"""
+    print("\n🕷️ 顺序调试所有四条腿")
+    legs = [
+        ('前左腿 (FL)', debug_leg_fl),
+        ('前右腿 (FR)', debug_leg_fr),
+        ('后左腿 (BL)', debug_leg_bl),
+        ('后右腿 (BR)', debug_leg_br)
+    ]
+
+    success_count = 0
+    for leg_name, debug_func in legs:
+        print(f"\n{'='*50}")
+        try:
+            if debug_func(speed):
+                success_count += 1
+                print(f"✅ {leg_name} 调试成功")
+            else:
+                print(f"❌ {leg_name} 调试失败")
+        except Exception as e:
+            print(f"❌ {leg_name} 调试异常: {e}")
+
+        time.sleep(1)  # 腿之间的间隔
+
+    print(f"\n🎯 所有腿调试完成，成功: {success_count}/4")
+    return success_count == 4
+
+def custom_gpio_debug():
+    """自定义GPIO调试 - 用户输入三个GPIO编号"""
+    print("\n🔧 自定义GPIO调试")
+    try:
+        hip_gpio = int(input("请输入髋关节GPIO编号: ").strip())
+        thigh_gpio = int(input("请输入大腿关节GPIO编号: ").strip())
+        knee_gpio = int(input("请输入膝关节GPIO编号: ").strip())
+
+        speed_choice = input("选择速度 (1=慢速, 2=快速, 默认快速): ").strip()
+        speed = 'slow' if speed_choice == '1' else 'fast'
+
+        print(f"\n🎯 开始调试 GPIO组合: {hip_gpio}, {thigh_gpio}, {knee_gpio}")
+        return debug_leg_by_gpio(hip_gpio, thigh_gpio, knee_gpio,
+                               800 if speed == 'slow' else 300)
+
+    except ValueError:
+        print("❌ 请输入有效的GPIO编号")
+        return False
+    except Exception as e:
+        print(f"❌ 自定义调试失败: {e}")
+        return False
 
 # ======================
 # 快速动作函数
@@ -621,6 +777,20 @@ def run():
                 test_all_servos()
             elif choice == 7:
                 calibration_mode()
+
+            # 腿部单独调试
+            elif choice == 31:
+                debug_leg_fl()
+            elif choice == 32:
+                debug_leg_fr()
+            elif choice == 33:
+                debug_leg_bl()
+            elif choice == 34:
+                debug_leg_br()
+            elif choice == 35:
+                debug_all_legs_sequentially()
+            elif choice == 36:
+                custom_gpio_debug()
 
             # 步态控制
             elif choice == 11:
