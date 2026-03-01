@@ -9,7 +9,7 @@ Camera Setup Module for ESP32-Cam V2
 4. 详细日志输出
 """
 
-import camera
+import camera_http
 from micropython import const
 import time
 import gc
@@ -138,7 +138,7 @@ class ESP32Camera:
         try:
             for key, val in self.config.items():
                 try:
-                    camera.conf(key, val)
+                    camera_http.conf(key, val)
                     print(f"[CAM]   配置项 {key} = {val}")
                 except Exception as e:
                     print(f"[CAM]   配置项 {key} = {val} 失败: {e}")
@@ -164,7 +164,7 @@ class ESP32Camera:
         # 初始化摄像头
         print("[CAM] 调用 camera.init()...")
         try:
-            result = camera.init()
+            result = camera_http.init()
             print(f"[CAM] camera.init() 返回值: {result}")
 
             if result:
@@ -174,11 +174,11 @@ class ESP32Camera:
                 # 设置默认参数
                 print("[CAM] 设置默认图像参数...")
                 try:
-                    camera.contrast(2)       # 增加对比度
+                    camera_http.contrast(2)       # 增加对比度
                     print("[CAM]   对比度: 2")
-                    camera.brightness(0)     # 亮度
+                    camera_http.brightness(0)     # 亮度
                     print("[CAM]   亮度: 0")
-                    camera.saturation(0)     # 饱和度
+                    camera_http.saturation(0)     # 饱和度
                     print("[CAM]   饱和度: 0")
                 except Exception as e:
                     print(f"[CAM] 设置图像参数失败: {e}")
@@ -203,7 +203,7 @@ class ESP32Camera:
         print("[CAM] 关闭摄像头...")
 
         try:
-            camera.deinit()
+            camera_http.deinit()
             self.initialized = False
             print("[CAM] 摄像头已关闭")
         except Exception as e:
@@ -217,7 +217,7 @@ class ESP32Camera:
 
         try:
             start_time = time.ticks_ms()
-            frame = camera.capture()
+            frame = camera_http.capture()
             elapsed = time.ticks_diff(time.ticks_ms(), start_time)
 
             if frame:
@@ -247,7 +247,7 @@ class ESP32Camera:
             return False
 
         try:
-            camera.conf(FRAMESIZE, size)
+            camera_http.conf(FRAMESIZE, size)
             size_name = FRAMESIZE_NAMES.get(size, str(size))
             print(f"[CAM] 帧尺寸已设置为: {size_name}")
             return True
@@ -263,7 +263,7 @@ class ESP32Camera:
 
         try:
             quality = max(1, min(31, quality))
-            camera.conf(JPEG_QUALITY, quality)
+            camera_http.conf(JPEG_QUALITY, quality)
             print(f"[CAM] JPEG质量已设置为: {quality}")
             return True
         except Exception as e:
@@ -277,7 +277,7 @@ class ESP32Camera:
             return False
 
         try:
-            camera.contrast(contrast)
+            camera_http.contrast(contrast)
             print(f"[CAM] 对比度已设置为: {contrast}")
             return True
         except Exception as e:
@@ -291,7 +291,7 @@ class ESP32Camera:
             return False
 
         try:
-            camera.brightness(brightness)
+            camera_http.brightness(brightness)
             print(f"[CAM] 亮度已设置为: {brightness}")
             return True
         except Exception as e:
@@ -305,7 +305,7 @@ class ESP32Camera:
             return False
 
         try:
-            camera.saturation(saturation)
+            camera_http.saturation(saturation)
             print(f"[CAM] 饱和度已设置为: {saturation}")
             return True
         except Exception as e:

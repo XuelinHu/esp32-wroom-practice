@@ -3,7 +3,7 @@ Camera Setup for ESP32-Cam
 摄像头初始化和配置模块
 """
 
-import camera
+import camera_http
 from micropython import const
 
 # 摄像头配置常量
@@ -100,7 +100,7 @@ class ESP32Camera:
         """配置摄像头参数"""
         try:
             for key, val in self.config.items():
-                camera.conf(key, val)
+                camera_http.conf(key, val)
             print("摄像头配置完成")
             return True
         except Exception as e:
@@ -115,15 +115,15 @@ class ESP32Camera:
                 return False
 
             # 初始化摄像头
-            result = camera.init()
+            result = camera_http.init()
             if result:
                 self.initialized = True
                 print("摄像头初始化成功")
 
                 # 设置默认参数
-                camera.contrast(2)       # 增加对比度
-                camera.brightness(0)     # 亮度
-                camera.saturation(0)     # 饱和度
+                camera_http.contrast(2)       # 增加对比度
+                camera_http.brightness(0)     # 亮度
+                camera_http.saturation(0)     # 饱和度
 
                 return True
             else:
@@ -137,7 +137,7 @@ class ESP32Camera:
     def deinit(self):
         """反初始化摄像头"""
         try:
-            camera.deinit()
+            camera_http.deinit()
             self.initialized = False
             print("摄像头已关闭")
         except Exception as e:
@@ -150,7 +150,7 @@ class ESP32Camera:
             return None
 
         try:
-            return camera.capture()
+            return camera_http.capture()
         except Exception as e:
             print(f"捕获图像失败: {e}")
             return None
@@ -161,7 +161,7 @@ class ESP32Camera:
             return False
 
         try:
-            camera.conf(FRAMESIZE, size)
+            camera_http.conf(FRAMESIZE, size)
             print(f"帧尺寸已设置为: {size}")
             return True
         except Exception as e:
@@ -174,7 +174,7 @@ class ESP32Camera:
             return False
 
         try:
-            camera.conf(JPEG_QUALITY, max(1, min(31, quality)))
+            camera_http.conf(JPEG_QUALITY, max(1, min(31, quality)))
             print(f"JPEG质量已设置为: {quality}")
             return True
         except Exception as e:
@@ -187,7 +187,7 @@ class ESP32Camera:
             return False
 
         try:
-            camera.contrast(contrast)
+            camera_http.contrast(contrast)
             print(f"对比度已设置为: {contrast}")
             return True
         except Exception as e:
