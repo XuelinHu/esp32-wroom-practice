@@ -7,17 +7,37 @@ ULTRASONIC_TRIG_PIN = 25
 ULTRASONIC_ECHO_PIN = 26
 BUZZER_PWM_PIN = 13
 
+# Frequency / Density knob
+# - One parameter to make both ultrasonic sampling + HTTP upload denser.
+# - 100 = baseline, bigger = denser (shorter intervals).
+FREQUENCY_MULTIPLIER_PCT = 120
+
+def _scaled_interval_ms(base_ms, min_ms=20):
+    # Convert "frequency multiplier" to shorter time intervals.
+    # Example: 120% => interval = base * 100 / 120 (~0.83x)
+    try:
+        scaled = (int(base_ms) * 100) // int(FREQUENCY_MULTIPLIER_PCT)
+    except Exception:
+        scaled = int(base_ms)
+    if scaled < int(min_ms):
+        return int(min_ms)
+    return int(scaled)
+
 # Ultrasonic / Buzzer behavior
 # - Distances in cm: >= MAX means silent; < MIN will be clamped to MIN
 ULTRASONIC_MIN_DISTANCE_CM = 5
 ULTRASONIC_MAX_DISTANCE_CM = 200
 ULTRASONIC_ECHO_TIMEOUT_US = 30000
+ULTRASONIC_TIMEOUT_BACKOFF_BASE_MS = 260
+ULTRASONIC_TIMEOUT_BACKOFF_MS = _scaled_interval_ms(ULTRASONIC_TIMEOUT_BACKOFF_BASE_MS, min_ms=50)
 
 # - Buzzer mapping (nearer -> higher freq + faster beeps)
 BUZZER_FREQ_MIN_HZ = 300
 BUZZER_FREQ_MAX_HZ = 900
-BUZZER_PERIOD_MAX_MS = 1400  # far end
-BUZZER_PERIOD_MIN_MS = 700   # near end
+BUZZER_PERIOD_MAX_BASE_MS = 1400  # far end
+BUZZER_PERIOD_MIN_BASE_MS = 700   # near end
+BUZZER_PERIOD_MAX_MS = _scaled_interval_ms(BUZZER_PERIOD_MAX_BASE_MS, min_ms=200)
+BUZZER_PERIOD_MIN_MS = _scaled_interval_ms(BUZZER_PERIOD_MIN_BASE_MS, min_ms=120)
 BUZZER_ALARM_DUTY = 900      # PWM duty (0..1023)
 
 # Water-drop sensor config
@@ -26,14 +46,21 @@ WATER_ACTIVE_LEVEL = 0    # 0: active-low (default pull-up), 1: active-high
 WATER_DEBOUNCE_MS = 60    # debounce window for edge detection
 
 # WiFi config (STA)
-WIFI_SSID = "ChinaNet-E5y7"
-WIFI_PASSWORD = "zadyx5cc"
+WIFI_SSID = "YOUR_WIFI_SSID_0"
+WIFI_PASSWORD = "YOUR_WIFI_PASSWORD_0"
 
-WIFI_SSID_1 = "Deipss"
-WIFI_PASSWORD_1 = "aabbccdd"
+WIFI_SSID_1 = "YOUR_WIFI_SSID_1"
+WIFI_PASSWORD_1 = "YOUR_WIFI_PASSWORD_1"
 
-WIFI_SSID_2 = "ABC"
-WIFI_PASSWORD_2 = "aabbccdd"
+WIFI_SSID_2 = "YOUR_WIFI_SSID_2"
+WIFI_PASSWORD_2 = "YOUR_WIFI_PASSWORD_2"
+
+# Ordered list of WiFi candidates (will be used for rotation).
+WIFI_NETWORKS = [
+    (WIFI_SSID, WIFI_PASSWORD),
+    (WIFI_SSID_1, WIFI_PASSWORD_1),
+    (WIFI_SSID_2, WIFI_PASSWORD_2),
+]
 
 # WiFi connection strategy:
 # - Connect in order: WIFI_SSID -> WIFI_SSID_1 -> WIFI_SSID_2
@@ -44,13 +71,38 @@ WIFI_CONNECT_RETRY_COUNT = 3
 WIFI_ROTATE_BACKOFF_S = 5
 
 # Upload server config (fixed IP server)
-SERVER_IP = "10.94.156.92"
+SERVER_IP = "192.168.1.100"
 SERVER_PORT = 8080
 SERVER_PATH = "/upload"
-UPLOAD_INTERVAL_MS = 1000  # periodic telemetry interval (ms)
+UPLOAD_INTERVAL_BASE_MS = 1000
+UPLOAD_INTERVAL_MS = _scaled_interval_ms(UPLOAD_INTERVAL_BASE_MS, min_ms=100)  # periodic telemetry interval (ms)
 
 # Optional: device label shown in payload
 DEVICE_NAME = "snic_bee"
+
+# Optional local-only secrets override (recommended: keep credentials out of git).
+# Create `snic_bee/secrets.py` to override any of:
+# - WIFI_NETWORKS, SERVER_IP, SERVER_PORT, SERVER_PATH, DEVICE_NAME ...
+_secrets = None
+try:
+    import snic_bee.secrets as _secrets  # type: ignore
+except Exception:
+    try:
+        import secrets as _secrets  # type: ignore
+    except Exception:
+        _secrets = None
+
+if _secrets is not None:
+    if hasattr(_secrets, "WIFI_NETWORKS"):
+        WIFI_NETWORKS = getattr(_secrets, "WIFI_NETWORKS")
+    if hasattr(_secrets, "SERVER_IP"):
+        SERVER_IP = getattr(_secrets, "SERVER_IP")
+    if hasattr(_secrets, "SERVER_PORT"):
+        SERVER_PORT = getattr(_secrets, "SERVER_PORT")
+    if hasattr(_secrets, "SERVER_PATH"):
+        SERVER_PATH = getattr(_secrets, "SERVER_PATH")
+    if hasattr(_secrets, "DEVICE_NAME"):
+        DEVICE_NAME = getattr(_secrets, "DEVICE_NAME")
 # ======================================================================
 
 from machine import Pin, PWM
@@ -84,7 +136,7 @@ class SonicBuzzerSystem:
         self.max_distance = ULTRASONIC_MAX_DISTANCE_CM  # Safety distance: 2 meters
         # Lower probe rate to improve stability on noisy setups.
         self.loop_delay_ms = 180
-        self.timeout_backoff_ms = 260
+        self.timeout_backoff_ms = ULTRASONIC_TIMEOUT_BACKOFF_MS
         self.timeout_count = 0
         self.alarm_duty = BUZZER_ALARM_DUTY  # Louder alarm (0..1023)
         self.timeout_log_every = 10
@@ -279,7 +331,14 @@ class SnicBeeTelemetryApp:
         )
 
         # WiFiStation instance will be created when connecting (to support SSID rotation).
-        self.wifi = WiFiStation(WIFI_SSID, WIFI_PASSWORD, timeout_s=WIFI_CONNECT_TIMEOUT_S, retry_count=1)
+        first_ssid, first_password = ("", "")
+        try:
+            if WIFI_NETWORKS and WIFI_NETWORKS[0]:
+                first_ssid, first_password = WIFI_NETWORKS[0]
+        except Exception:
+            pass
+
+        self.wifi = WiFiStation(first_ssid, first_password, timeout_s=WIFI_CONNECT_TIMEOUT_S, retry_count=1)
         self.uploader = HTTPUploader(SERVER_IP, SERVER_PORT, path=SERVER_PATH, timeout_s=3)
 
         self._last_upload_ms = 0
@@ -318,11 +377,10 @@ class SnicBeeTelemetryApp:
         return self.uploader.post_json(payload)
 
     def connect_wifi_in_order(self):
-        networks = [
-            (WIFI_SSID, WIFI_PASSWORD),
-            (WIFI_SSID_1, WIFI_PASSWORD_1),
-            (WIFI_SSID_2, WIFI_PASSWORD_2),
-        ]
+        try:
+            networks = list(WIFI_NETWORKS)
+        except Exception:
+            networks = []
 
         for idx, (ssid, password) in enumerate(networks, 1):
             if not ssid:
