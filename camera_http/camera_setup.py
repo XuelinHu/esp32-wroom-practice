@@ -1,13 +1,11 @@
-"""
+﻿"""
 Camera Setup for ESP32-Cam
-摄像头初始化和配置模块
-"""
+鎽勫儚澶村垵濮嬪寲鍜岄厤缃ā鍧?"""
 
-import camera_http
+import camera
 from micropython import const
 
-# 摄像头配置常量
-PIN_PWDN    = const(0)  # power-down
+# 鎽勫儚澶撮厤缃父閲?PIN_PWDN    = const(0)  # power-down
 PIN_RESET   = const(1)  # reset
 PIN_XCLK    = const(2)
 PIN_SIOD    = const(3)  # SDA
@@ -31,7 +29,7 @@ FRAMESIZE   = const(18)  # framesize
 JPEG_QUALITY= const(19)
 FB_COUNT    = const(20)  # framebuffer count
 
-# 像素格式
+# 鍍忕礌鏍煎紡
 PIXFORMAT_RGB565    = const(1)  # 2BPP/RGB565
 PIXFORMAT_YUV422    = const(2)  # 2BPP/YUV422
 PIXFORMAT_YUV420    = const(3)  # 1.5BPP/YUV420
@@ -40,8 +38,7 @@ PIXFORMAT_JPEG      = const(5)  # JPEG/COMPRESSED
 PIXFORMAT_RGB888    = const(6)  # 3BPP/RGB888
 PIXFORMAT_RAW       = const(7)  # RAW
 
-# 帧尺寸
-FRAMESIZE_96X96   = const(1)   # 96x96
+# 甯у昂瀵?FRAMESIZE_96X96   = const(1)   # 96x96
 FRAMESIZE_QQVGA   = const(2)   # 160x120
 FRAMESIZE_QCIF    = const(3)   # 176x144
 FRAMESIZE_HQVGA   = const(4)   # 240x176
@@ -60,8 +57,7 @@ FRAMESIZE_P_HD    = const(16)  # 720x1280
 FRAMESIZE_P_3MP   = const(17)  # 864x1536
 FRAMESIZE_QXGA    = const(18)  # 2048x1536
 
-# XIAO ESP32-S3 OV2640摄像头配置
-XIAO_CONFIG = {
+# XIAO ESP32-S3 OV2640鎽勫儚澶撮厤缃?XIAO_CONFIG = {
     PIN_PWDN: -1,
     PIN_RESET: -1,
     PIN_XCLK: 10,
@@ -88,114 +84,112 @@ XIAO_CONFIG = {
 class ESP32Camera:
     def __init__(self, config=None):
         """
-        初始化摄像头
+        鍒濆鍖栨憚鍍忓ご
 
         Args:
-            config: 摄像头配置字典，默认使用XIAO配置
+            config: 鎽勫儚澶撮厤缃瓧鍏革紝榛樿浣跨敤XIAO閰嶇疆
         """
         self.config = config or XIAO_CONFIG
         self.initialized = False
 
     def configure(self):
-        """配置摄像头参数"""
+        """Configure camera parameters."""
         try:
             for key, val in self.config.items():
-                camera_http.conf(key, val)
-            print("摄像头配置完成")
+                camera.conf(key, val)
+            print("Camera configuration complete")
             return True
         except Exception as e:
-            print(f"摄像头配置失败: {e}")
+            print(f"鎽勫儚澶撮厤缃け璐? {e}")
             return False
 
     def init(self):
-        """初始化摄像头"""
+        """鍒濆鍖栨憚鍍忓ご"""
         try:
-            # 先配置摄像头
+            # 鍏堥厤缃憚鍍忓ご
             if not self.configure():
                 return False
 
-            # 初始化摄像头
-            result = camera_http.init()
+            # 鍒濆鍖栨憚鍍忓ご
+            result = camera.init()
             if result:
                 self.initialized = True
-                print("摄像头初始化成功")
+                print("鎽勫儚澶村垵濮嬪寲鎴愬姛")
 
-                # 设置默认参数
-                camera_http.contrast(2)       # 增加对比度
-                camera_http.brightness(0)     # 亮度
-                camera_http.saturation(0)     # 饱和度
-
+                # 璁剧疆榛樿鍙傛暟
+                camera.contrast(2)       # 澧炲姞瀵规瘮搴?                camera.brightness(0)     # 浜害
+                camera.saturation(0)     # 楗卞拰搴?
                 return True
             else:
-                print("摄像头初始化失败")
+                print("鎽勫儚澶村垵濮嬪寲澶辫触")
                 return False
 
         except Exception as e:
-            print(f"摄像头初始化异常: {e}")
+            print(f"鎽勫儚澶村垵濮嬪寲寮傚父: {e}")
             return False
 
     def deinit(self):
-        """反初始化摄像头"""
+        """Deinitialize camera."""
         try:
-            camera_http.deinit()
+            camera.deinit()
             self.initialized = False
-            print("摄像头已关闭")
+            print("鎽勫儚澶村凡鍏抽棴")
         except Exception as e:
-            print(f"关闭摄像头失败: {e}")
+            print(f"鍏抽棴鎽勫儚澶村け璐? {e}")
 
     def capture_frame(self):
-        """捕获一帧图像"""
+        """Capture one frame."""
         if not self.initialized:
-            print("摄像头未初始化")
+            print("Camera not initialized")
             return None
 
         try:
-            return camera_http.capture()
+            return camera.capture()
         except Exception as e:
-            print(f"捕获图像失败: {e}")
+            print(f"鎹曡幏鍥惧儚澶辫触: {e}")
             return None
 
     def set_framesize(self, size):
-        """设置帧尺寸"""
+        """Set frame size."""
         if not self.initialized:
             return False
 
         try:
-            camera_http.conf(FRAMESIZE, size)
-            print(f"帧尺寸已设置为: {size}")
+            camera.conf(FRAMESIZE, size)
+            print(f"甯у昂瀵稿凡璁剧疆涓? {size}")
             return True
         except Exception as e:
-            print(f"设置帧尺寸失败: {e}")
+            print(f"璁剧疆甯у昂瀵稿け璐? {e}")
             return False
 
     def set_quality(self, quality):
-        """设置JPEG质量 (1-31, 数值越小质量越高)"""
+        """璁剧疆JPEG璐ㄩ噺 (1-31, 鏁板€艰秺灏忚川閲忚秺楂?"""
         if not self.initialized:
             return False
 
         try:
-            camera_http.conf(JPEG_QUALITY, max(1, min(31, quality)))
-            print(f"JPEG质量已设置为: {quality}")
+            camera.conf(JPEG_QUALITY, max(1, min(31, quality)))
+            print(f"JPEG璐ㄩ噺宸茶缃负: {quality}")
             return True
         except Exception as e:
-            print(f"设置JPEG质量失败: {e}")
+            print(f"璁剧疆JPEG璐ㄩ噺澶辫触: {e}")
             return False
 
     def set_contrast(self, contrast):
-        """设置对比度 (-2 到 +2)"""
+        """璁剧疆瀵规瘮搴?(-2 鍒?+2)"""
         if not self.initialized:
             return False
 
         try:
-            camera_http.contrast(contrast)
-            print(f"对比度已设置为: {contrast}")
+            camera.contrast(contrast)
+            print(f"瀵规瘮搴﹀凡璁剧疆涓? {contrast}")
             return True
         except Exception as e:
-            print(f"设置对比度失败: {e}")
+            print(f"璁剧疆瀵规瘮搴﹀け璐? {e}")
             return False
 
     def get_status(self):
-        """获取摄像头状态"""
+        """Get camera status."""
         return {
             "initialized": self.initialized,
             "framesize": self.config.get(FRAMESIZE, "unknown"),
@@ -204,6 +198,6 @@ class ESP32Camera:
         }
 
 def configure_camera(cam, config):
-    """配置摄像头的辅助函数"""
+    """閰嶇疆鎽勫儚澶寸殑杈呭姪鍑芥暟"""
     for key, val in config.items():
         cam.conf(key, val)
