@@ -1,20 +1,21 @@
-# ====== CONFIG (edit here) ============================================
-# Hardware / Pins
-# - Ultrasonic sensor (HC-SR04): needs TRIG(OUT) + ECHO(IN)
-# - Buzzer: PWM output pin
-# - Water-drop sensor: digital input pin (typically "rain drop" / "water leak" board)
+# ====== 配置区（主要改这里） ============================================
+# 硬件引脚
+# - 超声波传感器 HC-SR04：需要 TRIG(输出) 和 ECHO(输入)
+# - 蜂鸣器：PWM 输出引脚
+# - 水滴/漏水传感器：数字输入引脚
 ULTRASONIC_TRIG_PIN = 25
 ULTRASONIC_ECHO_PIN = 26
 BUZZER_PWM_PIN = 13
 
-# Frequency / Density knob
-# - One parameter to make both ultrasonic sampling + HTTP upload denser.
-# - 100 = baseline, bigger = denser (shorter intervals).
-FREQUENCY_MULTIPLIER_PCT = 120
+# 运行频率倍率
+# - 同时影响超声波测距节奏和 HTTP 上传节奏
+# - 100 = 基准频率；越大越密集、CPU/Wi‑Fi 更忙、发热更高
+# - 为了长期运行更稳，默认改为 70，整体降载
+FREQUENCY_MULTIPLIER_PCT = 70
 
 def _scaled_interval_ms(base_ms, min_ms=20):
-    # Convert "frequency multiplier" to shorter time intervals.
-    # Example: 120% => interval = base * 100 / 120 (~0.83x)
+    # 将“频率倍率”换算成实际时间间隔。
+    # 例如 120% => 间隔变短；70% => 间隔变长。
     try:
         scaled = (int(base_ms) * 100) // int(FREQUENCY_MULTIPLIER_PCT)
     except Exception:
@@ -23,29 +24,30 @@ def _scaled_interval_ms(base_ms, min_ms=20):
         return int(min_ms)
     return int(scaled)
 
-# Ultrasonic / Buzzer behavior
-# - Distances in cm: >= MAX means silent; < MIN will be clamped to MIN
+# 超声波 / 蜂鸣器参数
+# - 单位 cm：距离 >= MAX 时静音；距离 < MIN 时按 MIN 计算
 ULTRASONIC_MIN_DISTANCE_CM = 5
 ULTRASONIC_MAX_DISTANCE_CM = 200
 ULTRASONIC_ECHO_TIMEOUT_US = 30000
 ULTRASONIC_TIMEOUT_BACKOFF_BASE_MS = 260
-ULTRASONIC_TIMEOUT_BACKOFF_MS = _scaled_interval_ms(ULTRASONIC_TIMEOUT_BACKOFF_BASE_MS, min_ms=50)
+ULTRASONIC_TIMEOUT_BACKOFF_MS = _scaled_interval_ms(ULTRASONIC_TIMEOUT_BACKOFF_BASE_MS, min_ms=120)
 
-# - Buzzer mapping (nearer -> higher freq + faster beeps)
-BUZZER_FREQ_MIN_HZ = 300
-BUZZER_FREQ_MAX_HZ = 900
-BUZZER_PERIOD_MAX_BASE_MS = 1400  # far end
-BUZZER_PERIOD_MIN_BASE_MS = 700   # near end
-BUZZER_PERIOD_MAX_MS = _scaled_interval_ms(BUZZER_PERIOD_MAX_BASE_MS, min_ms=200)
-BUZZER_PERIOD_MIN_MS = _scaled_interval_ms(BUZZER_PERIOD_MIN_BASE_MS, min_ms=120)
-BUZZER_ALARM_DUTY = 900      # PWM duty (0..1023)
+# - 蜂鸣器映射：越近 -> 频率越高、鸣叫越快
+# - 为降低发热，限制最高频率和占空比，避免长时间高功率驱动
+BUZZER_FREQ_MIN_HZ = 280
+BUZZER_FREQ_MAX_HZ = 700
+BUZZER_PERIOD_MAX_BASE_MS = 1800  # 远距离时更稀疏
+BUZZER_PERIOD_MIN_BASE_MS = 900   # 近距离时也不要过快
+BUZZER_PERIOD_MAX_MS = _scaled_interval_ms(BUZZER_PERIOD_MAX_BASE_MS, min_ms=350)
+BUZZER_PERIOD_MIN_MS = _scaled_interval_ms(BUZZER_PERIOD_MIN_BASE_MS, min_ms=220)
+BUZZER_ALARM_DUTY = 420      # PWM 占空比 (0..1023)，越大越响也越热
 
-# Water-drop sensor config
-WATER_PIN = 27            # GPIO for water-drop detection
-WATER_ACTIVE_LEVEL = 0    # 0: active-low (default pull-up), 1: active-high
-WATER_DEBOUNCE_MS = 60    # debounce window for edge detection
+# 水滴传感器参数
+WATER_PIN = 27            # 水滴检测 GPIO
+WATER_ACTIVE_LEVEL = 0    # 0: 低电平触发（默认上拉）；1: 高电平触发
+WATER_DEBOUNCE_MS = 80    # 去抖时间，避免抖动误报
 
-# WiFi config (STA)
+# Wi‑Fi 配置（STA 模式）
 WIFI_SSID = "YOUR_WIFI_SSID_0"
 WIFI_PASSWORD = "YOUR_WIFI_PASSWORD_0"
 
@@ -55,34 +57,33 @@ WIFI_PASSWORD_1 = "YOUR_WIFI_PASSWORD_1"
 WIFI_SSID_2 = "YOUR_WIFI_SSID_2"
 WIFI_PASSWORD_2 = "YOUR_WIFI_PASSWORD_2"
 
-# Ordered list of WiFi candidates (will be used for rotation).
+# Wi‑Fi 候选列表，按顺序轮询连接
 WIFI_NETWORKS = [
     (WIFI_SSID, WIFI_PASSWORD),
     (WIFI_SSID_1, WIFI_PASSWORD_1),
     (WIFI_SSID_2, WIFI_PASSWORD_2),
 ]
 
-# WiFi connection strategy:
-# - Connect in order: WIFI_SSID -> WIFI_SSID_1 -> WIFI_SSID_2
-# - Each SSID: retry WIFI_CONNECT_RETRY_COUNT times with logs
-# - All failed: wait WIFI_ROTATE_BACKOFF_S seconds and start from first again
+# Wi‑Fi 连接策略
+# - 按列表顺序依次连接
+# - 每个 SSID 重试若干次
+# - 全部失败后等待一段时间再从头开始
 WIFI_CONNECT_TIMEOUT_S = 20
 WIFI_CONNECT_RETRY_COUNT = 3
-WIFI_ROTATE_BACKOFF_S = 5
+WIFI_ROTATE_BACKOFF_S = 8
 
-# Upload server config (fixed IP server)
+# 上传服务器参数（固定 IP）
 SERVER_IP = "192.168.1.100"
 SERVER_PORT = 8080
 SERVER_PATH = "/upload"
-UPLOAD_INTERVAL_BASE_MS = 1000
-UPLOAD_INTERVAL_MS = _scaled_interval_ms(UPLOAD_INTERVAL_BASE_MS, min_ms=100)  # periodic telemetry interval (ms)
+UPLOAD_INTERVAL_BASE_MS = 3000
+UPLOAD_INTERVAL_MS = _scaled_interval_ms(UPLOAD_INTERVAL_BASE_MS, min_ms=800)  # 周期遥测上传间隔（ms）
 
-# Optional: device label shown in payload
+# 设备名：会上报到服务端
 DEVICE_NAME = "snic_bee"
 
-# Optional local-only secrets override (recommended: keep credentials out of git).
-# Create `snic_bee/secrets.py` to override any of:
-# - WIFI_NETWORKS, SERVER_IP, SERVER_PORT, SERVER_PATH, DEVICE_NAME ...
+# 可选的本地私有配置覆盖（建议把账号密码放在 secrets.py）
+# 可覆盖：WIFI_NETWORKS、SERVER_IP、SERVER_PORT、SERVER_PATH、DEVICE_NAME 等
 _secrets = None
 try:
     import snic_bee.secrets as _secrets  # type: ignore
@@ -124,22 +125,22 @@ except Exception:
 
 
 class SonicBuzzerSystem:
-    """Use ultrasonic distance to control buzzer speed/frequency."""
+    """使用超声波距离控制蜂鸣器频率和节奏。"""
 
     def __init__(self, trig_pin=ULTRASONIC_TRIG_PIN, echo_pin=ULTRASONIC_ECHO_PIN, buzzer_pin=BUZZER_PWM_PIN):
         self.trig = Pin(trig_pin, Pin.OUT)
         self.echo = Pin(echo_pin, Pin.IN)
         self.buzzer = PWM(Pin(buzzer_pin, Pin.OUT), freq=1000, duty=0)
 
-        # Range and timing config (cm / ms)
+        # 核心运行参数
         self.min_distance = ULTRASONIC_MIN_DISTANCE_CM
-        self.max_distance = ULTRASONIC_MAX_DISTANCE_CM  # Safety distance: 2 meters
-        # Lower probe rate to improve stability on noisy setups.
-        self.loop_delay_ms = 180
+        self.max_distance = ULTRASONIC_MAX_DISTANCE_CM  # 安全检测上限，单位 cm
+        self.loop_delay_ms = 250  # 预留给空闲节流，数值越大越省电
         self.timeout_backoff_ms = ULTRASONIC_TIMEOUT_BACKOFF_MS
         self.timeout_count = 0
-        self.alarm_duty = BUZZER_ALARM_DUTY  # Louder alarm (0..1023)
-        self.timeout_log_every = 10
+        self.alarm_duty = BUZZER_ALARM_DUTY  # 蜂鸣器驱动强度，长期运行不宜过高
+        self.timeout_log_every = 20          # 减少超时日志，避免串口刷屏占用 CPU
+        self._last_off_log_ms = 0
 
         self.log("init ok")
         self.log("pins: TRIG=GPIO{}, ECHO=GPIO{}, BUZZER=GPIO{}".format(trig_pin, echo_pin, buzzer_pin))
@@ -173,7 +174,7 @@ class SonicBuzzerSystem:
             raise
 
     def measure_distance_cm(self):
-        """Measure distance by HC-SR04. Return None when timeout."""
+        """通过 HC-SR04 测距，超时返回 None。"""
         self.trig.value(0)
         time.sleep_us(2)
         self.trig.value(1)
@@ -184,6 +185,7 @@ class SonicBuzzerSystem:
 
         start_wait = time.ticks_us()
         while self.echo.value() == 0:
+            machine.idle()
             if time.ticks_diff(time.ticks_us(), start_wait) > timeout_us:
                 self.timeout_count += 1
                 if self.timeout_count % self.timeout_log_every == 0:
@@ -192,6 +194,7 @@ class SonicBuzzerSystem:
         pulse_start = time.ticks_us()
 
         while self.echo.value() == 1:
+            machine.idle()
             if time.ticks_diff(time.ticks_us(), pulse_start) > timeout_us:
                 self.timeout_count += 1
                 if self.timeout_count % self.timeout_log_every == 0:
@@ -204,11 +207,11 @@ class SonicBuzzerSystem:
         return distance
 
     def _map_distance(self, d):
-        """Map distance to buzzer behavior.
+        """将距离映射为蜂鸣器行为。
 
-        Nearer object -> higher tone + faster beep.
-        Farther object -> lower tone + slower beep.
-        Too far/invalid -> silent.
+        越近：音调更高、节奏更快
+        越远：音调更低、节奏更慢
+        太远或测距失败：静音
         """
         if d is None or d >= self.max_distance:
             return None
@@ -219,12 +222,12 @@ class SonicBuzzerSystem:
         span = self.max_distance - self.min_distance
         ratio = (self.max_distance - d) / span  # 0.0 far ... 1.0 near
 
-        # Keep frequency/speed capped to avoid constant harsh beeping.
+        # 限制最高频率和最短周期，降低持续高负载和刺耳鸣叫。
         freq_span = BUZZER_FREQ_MAX_HZ - BUZZER_FREQ_MIN_HZ
         period_span = BUZZER_PERIOD_MAX_MS - BUZZER_PERIOD_MIN_MS
-        freq_hz = int(BUZZER_FREQ_MIN_HZ + ratio * freq_span)            # min..max Hz
-        period_ms = int(BUZZER_PERIOD_MAX_MS - ratio * period_span)      # max..min ms
-        on_ms = max(40, period_ms // 3)
+        freq_hz = int(BUZZER_FREQ_MIN_HZ + ratio * freq_span)
+        period_ms = int(BUZZER_PERIOD_MAX_MS - ratio * period_span)
+        on_ms = max(30, period_ms // 4)
         return freq_hz, period_ms, on_ms
 
     def step(self):
@@ -233,11 +236,15 @@ class SonicBuzzerSystem:
 
         if mapped is None:
             self.close_buzzer()
-            if d is None:
-                self.log("distance: timeout, buzzer: off")
-            else:
-                self.log("distance: {:.1f} cm, buzzer: off".format(d))
-            time.sleep_ms(self.timeout_backoff_ms)
+            now = time.ticks_ms()
+            # 静音状态下只做限频日志，避免一直刷串口导致额外负载。
+            if time.ticks_diff(now, self._last_off_log_ms) >= 3000:
+                if d is None:
+                    self.log("distance: timeout, buzzer: off")
+                else:
+                    self.log("distance: {:.1f} cm, buzzer: off".format(d))
+                self._last_off_log_ms = now
+            time.sleep_ms(max(self.timeout_backoff_ms, self.loop_delay_ms))
             return d
 
         freq_hz, period_ms, on_ms = mapped
@@ -267,6 +274,8 @@ class SonicBuzzerSystem:
 
 
 class WaterDropSensor:
+    """水滴/漏水数字传感器，带简单去抖。"""
+
     def __init__(self, pin, active_level=0, debounce_ms=60, pull=Pin.PULL_UP, log_prefix="[snic_bee.water]"):
         self.pin_no = int(pin)
         self.active_level = 1 if active_level else 0
@@ -302,7 +311,7 @@ class WaterDropSensor:
         if raw == self._stable:
             return False
 
-        # Stable change confirmed
+        # 已确认状态稳定变化
         self._stable = raw
         now_active = self._stable == self.active_level
         triggered = now_active and not self._active
@@ -330,7 +339,7 @@ class SnicBeeTelemetryApp:
             debounce_ms=WATER_DEBOUNCE_MS,
         )
 
-        # WiFiStation instance will be created when connecting (to support SSID rotation).
+        # Wi‑Fi 实例会在真正连接时创建，便于多 SSID 轮询切换。
         first_ssid, first_password = ("", "")
         try:
             if WIFI_NETWORKS and WIFI_NETWORKS[0]:
@@ -354,7 +363,8 @@ class SnicBeeTelemetryApp:
 
     def _ensure_wifi(self):
         now = time.ticks_ms()
-        if time.ticks_diff(now, self._last_wifi_check_ms) < 5000:
+        # 不要每次上传都检查 Wi‑Fi，降低网络栈抖动和额外功耗。
+        if time.ticks_diff(now, self._last_wifi_check_ms) < 15000:
             return self.wifi.is_connected()
         self._last_wifi_check_ms = now
 
@@ -405,6 +415,14 @@ class SnicBeeTelemetryApp:
 def main():
     app = SnicBeeTelemetryApp()
     try:
+        # 降低 CPU 频率，优先保证长期运行温升可控。
+        # ESP32 常见可选值：80MHz / 160MHz / 240MHz。
+        try:
+            machine.freq(160000000)
+            app.system.log("cpu freq set to 160MHz for thermal control")
+        except Exception as e:
+            app.system.log("cpu freq keep default: {}".format(e))
+
         app.system.log("telemetry app start")
 
         # First WiFi connect (blocking) - upload only after WiFi is ready.

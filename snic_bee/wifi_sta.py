@@ -1,8 +1,8 @@
 """
 snic_bee.wifi_sta
 
-Minimal WiFi Station (STA) helper for MicroPython/ESP32.
-Kept intentionally small and dependency-free.
+轻量级 Wi‑Fi STA 模式连接助手。
+专门给 MicroPython / ESP32 使用，尽量保持简单、依赖少。
 """
 
 import gc
@@ -12,6 +12,9 @@ import time
 
 class WiFiStation:
     def __init__(self, ssid, password, timeout_s=20, retry_count=3, log_prefix="[snic_bee.wifi]"):
+        # 关键参数说明：
+        # - timeout_s: 单次连接等待时长，过大时掉线恢复会更慢
+        # - retry_count: 单个 SSID 的重试次数，过高会导致断线时持续高负载重试
         self.ssid = ssid
         self.password = password
         self.timeout_s = int(timeout_s)
@@ -25,6 +28,7 @@ class WiFiStation:
         print("{} {}".format(self.log_prefix, msg))
 
     def connect(self):
+        # 关闭 AP 模式，避免 STA + AP 同时工作带来额外功耗和发热。
         ap = network.WLAN(network.AP_IF)
         if ap.active():
             ap.active(False)
@@ -51,6 +55,7 @@ class WiFiStation:
             while not self._sta.isconnected():
                 if time.time() - start >= self.timeout_s:
                     break
+                # 留出 CPU 时间片，避免连接等待期无意义空转。
                 time.sleep(0.2)
 
             if self._sta.isconnected():
@@ -84,7 +89,7 @@ class WiFiStation:
         return self._ip
 
     def reconnect(self):
+        # 先断开再重连，避免某些路由器下的 STA 假连接状态。
         self.disconnect()
         time.sleep(0.5)
         return self.connect()
-
