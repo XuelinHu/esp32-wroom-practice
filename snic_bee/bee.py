@@ -19,6 +19,10 @@ ENABLE_UPLOAD_WIFI = False
 UPLOAD_CONFIRM_ON_BOOT = True
 UPLOAD_CONFIRM_TIMEOUT_S = 8
 
+# WiFi auto-connect on boot (upload can still stay disabled).
+# This is for quickly verifying "联网成功" via WiFi logs (IP/RSSI/status).
+ENABLE_WIFI_ON_BOOT = True
+
 # 开机蜂鸣（默认三声）
 ENABLE_BOOT_BEEP = True
 BOOT_BEEP_COUNT = 3
@@ -546,7 +550,13 @@ def main():
                 app.log("wifi connect failed, retry all in {}s".format(WIFI_ROTATE_BACKOFF_S))
                 time.sleep(WIFI_ROTATE_BACKOFF_S)
         else:
-            app.log("upload disabled; skip wifi connect and http upload")
+            app.log("upload disabled; http upload off")
+            if ENABLE_WIFI_ON_BOOT:
+                app.log("wifi auto-connect enabled; try connect once at boot")
+                try:
+                    app.connect_wifi_in_order()
+                except Exception as e:
+                    app.log("wifi connect exception: {}".format(e))
 
         if app.system is not None:
             app.system.startup_self_test()
@@ -555,6 +565,13 @@ def main():
             distance_cm = app.system.step() if app.system is not None else None
             water_event = app.water.poll() if app.water is not None else False
             now = time.ticks_ms()
+
+            # Keep WiFi alive even when upload is disabled (throttled inside _ensure_wifi()).
+            if ENABLE_WIFI_ON_BOOT and not app.upload_enabled:
+                try:
+                    app._ensure_wifi()
+                except Exception as e:
+                    app.log("wifi ensure exception: {}".format(e))
 
             # Water event: upload immediately
             if water_event and app.upload_enabled:

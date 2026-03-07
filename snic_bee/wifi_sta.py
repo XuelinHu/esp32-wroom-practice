@@ -27,6 +27,55 @@ class WiFiStation:
     def _log(self, msg):
         print("{} {}".format(self.log_prefix, msg))
 
+    def _status_text(self, status):
+        # MicroPython on ESP32 typically uses these constants (may vary by port/firmware).
+        mapping = {}
+        for name in (
+            "STAT_IDLE",
+            "STAT_CONNECTING",
+            "STAT_WRONG_PASSWORD",
+            "STAT_NO_AP_FOUND",
+            "STAT_CONNECT_FAIL",
+            "STAT_GOT_IP",
+        ):
+            try:
+                code = getattr(network, name)
+                mapping[int(code)] = name
+            except Exception:
+                pass
+        try:
+            return mapping.get(int(status), str(status))
+        except Exception:
+            return str(status)
+
+    def _safe_status(self):
+        try:
+            if self._sta is None:
+                return None
+            return self._sta.status()
+        except Exception:
+            return None
+
+    def _safe_rssi(self):
+        try:
+            if self._sta is None:
+                return None
+            return self._sta.status("rssi")
+        except Exception:
+            return None
+
+    def _safe_mac(self):
+        try:
+            if self._sta is None:
+                return None
+            mac = self._sta.config("mac")
+            try:
+                return ":".join("{:02x}".format(b) for b in mac)
+            except Exception:
+                return str(mac)
+        except Exception:
+            return None
+
     def connect(self):
         # 关闭 AP 模式，避免 STA + AP 同时工作带来额外功耗和发热。
         ap = network.WLAN(network.AP_IF)
@@ -35,10 +84,13 @@ class WiFiStation:
 
         self._sta = network.WLAN(network.STA_IF)
         self._sta.active(True)
+        mac = self._safe_mac()
+        if mac:
+            self._log("sta active=1 mac={}".format(mac))
 
         if self._sta.isconnected():
             self._ip = self._sta.ifconfig()[0]
-            self._log("already connected, ip={}".format(self._ip))
+            self._log("already connected, ip={} rssi={}".format(self._ip, self._safe_rssi()))
             return True
 
         for attempt in range(1, self.retry_count + 1):
@@ -52,16 +104,36 @@ class WiFiStation:
                 continue
 
             start = time.time()
+            last_status = None
             while not self._sta.isconnected():
                 if time.time() - start >= self.timeout_s:
                     break
+
+                st = self._safe_status()
+                if st is not None and st != last_status:
+                    last_status = st
+                    self._log("status={} ({})".format(self._status_text(st), st))
                 # 留出 CPU 时间片，避免连接等待期无意义空转。
                 time.sleep(0.2)
 
             if self._sta.isconnected():
                 self._ip = self._sta.ifconfig()[0]
-                self._log("connected, ip={}".format(self._ip))
+                try:
+                    ifcfg = self._sta.ifconfig()
+                except Exception:
+                    ifcfg = None
+                self._log(
+                    "connected, ip={} ifconfig={} rssi={}".format(
+                        self._ip,
+                        ifcfg,
+                        self._safe_rssi(),
+                    )
+                )
                 return True
+
+            st = self._safe_status()
+            if st is not None:
+                self._log("connect timeout/fail, status={} ({})".format(self._status_text(st), st))
 
             try:
                 self._sta.disconnect()
@@ -87,6 +159,9 @@ class WiFiStation:
         if self.is_connected():
             self._ip = self._sta.ifconfig()[0]
         return self._ip
+
+    def get_rssi(self):
+        return self._safe_rssi()
 
     def reconnect(self):
         # 先断开再重连，避免某些路由器下的 STA 假连接状态。
