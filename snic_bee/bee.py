@@ -12,6 +12,20 @@ BUZZER_PWM_PIN = 13
 ENABLE_DISTANCE_SENSOR = True
 ENABLE_WATER_SENSOR = False
 
+# WiFi/HTTP 上传开关（默认不上传）
+# - 默认不会连接 WiFi / 不会 HTTP 上传
+# - 如需上传：设 `ENABLE_UPLOAD_WIFI=True` 或在启动时确认
+ENABLE_UPLOAD_WIFI = False
+UPLOAD_CONFIRM_ON_BOOT = True
+UPLOAD_CONFIRM_TIMEOUT_S = 8
+
+# 开机蜂鸣（默认三声）
+ENABLE_BOOT_BEEP = True
+BOOT_BEEP_COUNT = 3
+BOOT_BEEP_FREQ_HZ = 1000
+BOOT_BEEP_ON_MS = 120
+BOOT_BEEP_OFF_MS = 120
+
 # 运行频率倍率
 # - 同时影响超声波测距节奏和 HTTP 上传节奏
 # - 100 = 基准频率；越大越密集、CPU/Wi‑Fi 更忙、发热更高
@@ -358,6 +372,7 @@ class SnicBeeTelemetryApp:
 
         self.wifi = WiFiStation(first_ssid, first_password, timeout_s=WIFI_CONNECT_TIMEOUT_S, retry_count=1)
         self.uploader = HTTPUploader(SERVER_IP, SERVER_PORT, path=SERVER_PATH, timeout_s=3)
+        self.upload_enabled = bool(ENABLE_UPLOAD_WIFI)
 
         self._last_upload_ms = 0
         self._last_wifi_check_ms = 0
@@ -391,6 +406,8 @@ class SnicBeeTelemetryApp:
         return self.connect_wifi_in_order()
 
     def _upload(self, payload):
+        if not getattr(self, "upload_enabled", False):
+            return False
         if not self._ensure_wifi():
             return False
         return self.uploader.post_json(payload)
@@ -427,6 +444,74 @@ class SnicBeeTelemetryApp:
             print("[snic_bee][{}] {}".format(time.ticks_ms(), msg))
 
 
+def _confirm_enable_upload(timeout_s=8):
+    """Wait for user confirmation on REPL; default is disabled."""
+    try:
+        import sys
+
+        try:
+            import uselect  # type: ignore
+        except Exception:
+            uselect = None  # type: ignore
+
+        if uselect is not None:
+            poller = uselect.poll()
+            poller.register(sys.stdin, uselect.POLLIN)
+            print(
+                "[snic_bee] upload disabled by default; type 'y' + Enter within {}s to enable.".format(
+                    int(timeout_s)
+                )
+            )
+            start = time.ticks_ms()
+            while time.ticks_diff(time.ticks_ms(), start) < int(timeout_s) * 1000:
+                ready = poller.poll(200)
+                if ready:
+                    line = sys.stdin.readline()
+                    if not line:
+                        return False
+                    return line.strip().lower() in ("y", "yes", "1", "true", "on")
+            return False
+
+        ans = input("Enable upload? [y/N] ")
+        return ans.strip().lower() in ("y", "yes", "1", "true", "on")
+    except Exception:
+        return False
+
+
+def _boot_beep(system=None):
+    pwm = None
+    temp_pwm = False
+    try:
+        if system is not None and hasattr(system, "buzzer"):
+            pwm = system.buzzer
+        else:
+            pwm = PWM(Pin(BUZZER_PWM_PIN, Pin.OUT), freq=int(BOOT_BEEP_FREQ_HZ), duty=0)
+            temp_pwm = True
+
+        try:
+            pwm.freq(int(BOOT_BEEP_FREQ_HZ))
+        except Exception:
+            pass
+
+        for _ in range(int(BOOT_BEEP_COUNT)):
+            pwm.duty(int(BUZZER_ALARM_DUTY))
+            time.sleep_ms(int(BOOT_BEEP_ON_MS))
+            pwm.duty(0)
+            time.sleep_ms(int(BOOT_BEEP_OFF_MS))
+    except Exception:
+        try:
+            if pwm is not None:
+                pwm.duty(0)
+        except Exception:
+            pass
+    finally:
+        if temp_pwm and pwm is not None:
+            try:
+                pwm.deinit()
+            except Exception:
+                pass
+
+
 def main():
     app = SnicBeeTelemetryApp()
     try:
@@ -438,6 +523,9 @@ def main():
         except Exception as e:
             app.log("cpu freq keep default: {}".format(e))
 
+        if ENABLE_BOOT_BEEP:
+            _boot_beep(system=app.system)
+
         app.log("telemetry app start")
         app.log(
             "feature switch: distance={}, water={}".format(
@@ -446,11 +534,19 @@ def main():
             )
         )
 
-        # First WiFi connect (blocking) - upload only after WiFi is ready.
-        app.log("wifi connecting...")
-        while not app.connect_wifi_in_order():
-            app.log("wifi connect failed, retry all in {}s".format(WIFI_ROTATE_BACKOFF_S))
-            time.sleep(WIFI_ROTATE_BACKOFF_S)
+        if UPLOAD_CONFIRM_ON_BOOT:
+            app.upload_enabled = _confirm_enable_upload(UPLOAD_CONFIRM_TIMEOUT_S)
+        else:
+            app.upload_enabled = bool(ENABLE_UPLOAD_WIFI)
+
+        if app.upload_enabled:
+            # First WiFi connect (blocking) - upload only after WiFi is ready.
+            app.log("wifi connecting...")
+            while not app.connect_wifi_in_order():
+                app.log("wifi connect failed, retry all in {}s".format(WIFI_ROTATE_BACKOFF_S))
+                time.sleep(WIFI_ROTATE_BACKOFF_S)
+        else:
+            app.log("upload disabled; skip wifi connect and http upload")
 
         if app.system is not None:
             app.system.startup_self_test()
@@ -461,7 +557,7 @@ def main():
             now = time.ticks_ms()
 
             # Water event: upload immediately
-            if water_event:
+            if water_event and app.upload_enabled:
                 payload = app._payload_base()
                 payload.update(
                     {
@@ -474,7 +570,7 @@ def main():
                 app._upload(payload)
 
             # Periodic telemetry
-            if time.ticks_diff(now, app._last_upload_ms) >= UPLOAD_INTERVAL_MS:
+            if app.upload_enabled and time.ticks_diff(now, app._last_upload_ms) >= UPLOAD_INTERVAL_MS:
                 app._last_upload_ms = now
                 payload = app._payload_base()
                 payload.update(
