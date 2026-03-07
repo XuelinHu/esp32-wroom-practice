@@ -1,12 +1,12 @@
 ﻿"""
 Camera Setup Module for ESP32-Cam V2
-鎽勫儚澶村垵濮嬪寲鍜岄厤缃ā鍧?
+摄像头初始化和配置模块
 
-鍔熻兘:
-1. 鎽勫儚澶寸‖浠堕厤缃?
-2. 鍥惧儚鍙傛暟璁剧疆
-3. 甯ф崟鑾峰姛鑳?
-4. 璇︾粏鏃ュ織杈撳嚭
+功能:
+1. 摄像头硬件配置
+2. 图像参数设置
+3. 帧捕获功能
+4. 详细日志输出
 """
 
 import camera
@@ -14,7 +14,7 @@ from micropython import const
 import time
 import gc
 
-# 鎽勫儚澶撮厤缃父閲?
+# 摄像头配置常量
 PIN_PWDN    = const(0)  # power-down
 PIN_RESET   = const(1)  # reset
 PIN_XCLK    = const(2)
@@ -39,7 +39,7 @@ FRAMESIZE   = const(18)  # framesize
 JPEG_QUALITY= const(19)
 FB_COUNT    = const(20)  # framebuffer count
 
-# 鍍忕礌鏍煎紡
+# 像素格式
 PIXFORMAT_RGB565    = const(1)  # 2BPP/RGB565
 PIXFORMAT_YUV422    = const(2)  # 2BPP/YUV422
 PIXFORMAT_YUV420    = const(3)  # 1.5BPP/YUV420
@@ -48,7 +48,7 @@ PIXFORMAT_JPEG      = const(5)  # JPEG/COMPRESSED
 PIXFORMAT_RGB888    = const(6)  # 3BPP/RGB888
 PIXFORMAT_RAW       = const(7)  # RAW
 
-# 甯у昂瀵?
+# 帧尺寸
 FRAMESIZE_96X96   = const(1)   # 96x96
 FRAMESIZE_QQVGA   = const(2)   # 160x120
 FRAMESIZE_QCIF    = const(3)   # 176x144
@@ -68,7 +68,7 @@ FRAMESIZE_P_HD    = const(16)  # 720x1280
 FRAMESIZE_P_3MP   = const(17)  # 864x1536
 FRAMESIZE_QXGA    = const(18)  # 2048x1536
 
-# 甯у昂瀵稿悕绉版槧灏?
+# 帧尺寸名称映射
 FRAMESIZE_NAMES = {
     FRAMESIZE_96X96: "96x96",
     FRAMESIZE_QQVGA: "160x120 (QQVGA)",
@@ -87,7 +87,7 @@ FRAMESIZE_NAMES = {
     FRAMESIZE_FHD: "1920x1080 (FHD)",
 }
 
-# XIAO ESP32-S3 OV2640鎽勫儚澶撮厤缃?
+# XIAO ESP32-S3 OV2640 摄像头配置
 XIAO_CONFIG = {
     PIN_PWDN: -1,
     PIN_RESET: -1,
@@ -115,10 +115,10 @@ XIAO_CONFIG = {
 class ESP32Camera:
     def __init__(self, config=None):
         """
-        鍒濆鍖栨憚鍍忓ご绫?
+        初始化摄像头类
 
         Args:
-            config: 鎽勫儚澶撮厤缃瓧鍏革紝榛樿浣跨敤XIAO閰嶇疆
+            config: 摄像头配置字典，默认使用XIAO配置
         """
         self.config = config or XIAO_CONFIG
         self.initialized = False
@@ -151,17 +151,17 @@ class ESP32Camera:
             return False
 
     def init(self):
-        """鍒濆鍖栨憚鍍忓ご"""
+        """初始化摄像头"""
         print("\n" + "=" * 50)
         print("[CAM] 寮€濮嬪垵濮嬪寲鎽勫儚澶?..")
         print("=" * 50)
 
-        # 鍏堥厤缃憚鍍忓ご
+        # 先配置摄像头
         if not self.configure():
             print("[CAM] 閰嶇疆澶辫触锛屾棤娉曞垵濮嬪寲")
             return False
 
-        # 鍒濆鍖栨憚鍍忓ご
+        # 初始化摄像头
         print("[CAM] 璋冪敤 camera.init()...")
         try:
             result = camera.init()
@@ -171,19 +171,19 @@ class ESP32Camera:
                 self.initialized = True
                 print("[CAM] 鎽勫儚澶村垵濮嬪寲鎴愬姛!")
 
-                # 璁剧疆榛樿鍙傛暟
+                # 设置默认参数
                 print("[CAM] 璁剧疆榛樿鍥惧儚鍙傛暟...")
                 try:
-                    camera.contrast(2)       # 澧炲姞瀵规瘮搴?
+                    camera.contrast(2)  # 增加对比度
                     print("[CAM]   瀵规瘮搴? 2")
-                    camera.brightness(0)     # 浜害
+                    camera.brightness(0)  # 亮度
                     print("[CAM]   浜害: 0")
-                    camera.saturation(0)     # 楗卞拰搴?
+                    camera.saturation(0)  # 饱和度
                     print("[CAM]   楗卞拰搴? 0")
                 except Exception as e:
                     print(f"[CAM] 璁剧疆鍥惧儚鍙傛暟澶辫触: {e}")
 
-                # 娓呯悊鍐呭瓨
+                # 清理内存
                 gc.collect()
                 print(f"[CAM] 鍙敤鍐呭瓨: {gc.mem_free()} bytes")
 
@@ -223,7 +223,7 @@ class ESP32Camera:
             if frame:
                 self.frame_count += 1
                 frame_size = len(frame)
-                # 姣?00甯ф墦鍗颁竴娆＄姸鎬?
+                # 每100帧打印一次状态
                 if self.frame_count % 100 == 0:
                     print(f"[CAM] 宸叉崟鑾?{self.frame_count} 甯? "
                           f"褰撳墠甯уぇ灏? {frame_size} bytes, "
@@ -256,7 +256,7 @@ class ESP32Camera:
             return False
 
     def set_quality(self, quality):
-        """璁剧疆JPEG璐ㄩ噺 (1-31, 鏁板€艰秺灏忚川閲忚秺楂?"""
+        """设置JPEG质量 (1-31，数值越小质量越高)"""
         if not self.initialized:
             print("[CAM] Error: camera not initialized")
             return False
@@ -271,7 +271,7 @@ class ESP32Camera:
             return False
 
     def set_contrast(self, contrast):
-        """璁剧疆瀵规瘮搴?(-2 鍒?+2)"""
+        """设置对比度 (-2 到 +2)"""
         if not self.initialized:
             print("[CAM] Error: camera not initialized")
             return False
@@ -285,7 +285,7 @@ class ESP32Camera:
             return False
 
     def set_brightness(self, brightness):
-        """璁剧疆浜害 (-2 鍒?+2)"""
+        """设置亮度 (-2 到 +2)"""
         if not self.initialized:
             print("[CAM] Error: camera not initialized")
             return False
@@ -299,7 +299,7 @@ class ESP32Camera:
             return False
 
     def set_saturation(self, saturation):
-        """璁剧疆楗卞拰搴?(-2 鍒?+2)"""
+        """设置饱和度 (-2 到 +2)"""
         if not self.initialized:
             print("[CAM] Error: camera not initialized")
             return False
@@ -347,7 +347,7 @@ def test_camera():
     if cam.init():
         print("\n[CAM] 鎽勫儚澶村垵濮嬪寲鎴愬姛")
 
-        # 鎹曡幏娴嬭瘯甯?
+        # 捕获测试帧
         print("\n[CAM] 鎹曡幏娴嬭瘯甯?..")
         for i in range(5):
             frame = cam.capture_frame()

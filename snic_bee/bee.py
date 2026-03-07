@@ -7,6 +7,11 @@ ULTRASONIC_TRIG_PIN = 25
 ULTRASONIC_ECHO_PIN = 26
 BUZZER_PWM_PIN = 13
 
+# 功能开关
+# - 关闭不需要的功能，可以直接减少传感器轮询、蜂鸣器驱动和事件处理带来的 CPU 占用
+ENABLE_DISTANCE_SENSOR = True
+ENABLE_WATER_SENSOR = False
+
 # 运行频率倍率
 # - 同时影响超声波测距节奏和 HTTP 上传节奏
 # - 100 = 基准频率；越大越密集、CPU/Wi‑Fi 更忙、发热更高
@@ -332,11 +337,15 @@ def _device_id_hex():
 class SnicBeeTelemetryApp:
     def __init__(self):
         self.device_id = _device_id_hex()
-        self.system = SonicBuzzerSystem()
-        self.water = WaterDropSensor(
-            pin=WATER_PIN,
-            active_level=WATER_ACTIVE_LEVEL,
-            debounce_ms=WATER_DEBOUNCE_MS,
+        self.system = SonicBuzzerSystem() if ENABLE_DISTANCE_SENSOR else None
+        self.water = (
+            WaterDropSensor(
+                pin=WATER_PIN,
+                active_level=WATER_ACTIVE_LEVEL,
+                debounce_ms=WATER_DEBOUNCE_MS,
+            )
+            if ENABLE_WATER_SENSOR
+            else None
         )
 
         # Wi‑Fi 实例会在真正连接时创建，便于多 SSID 轮询切换。
@@ -371,12 +380,12 @@ class SnicBeeTelemetryApp:
         if self.wifi.is_connected():
             return True
 
-        self.system.log("wifi disconnected, reconnecting...")
+        self.log("wifi disconnected, reconnecting...")
         try:
             if self.wifi.reconnect():
                 return True
         except Exception as e:
-            self.system.log("wifi reconnect exception: {}".format(e))
+            self.log("wifi reconnect exception: {}".format(e))
 
         # If reconnect fails, rotate across the configured SSIDs in order.
         return self.connect_wifi_in_order()
@@ -396,7 +405,7 @@ class SnicBeeTelemetryApp:
             if not ssid:
                 continue
 
-            self.system.log("wifi try {}/{} ssid={}".format(idx, len(networks), ssid))
+            self.log("wifi try {}/{} ssid={}".format(idx, len(networks), ssid))
             wifi = WiFiStation(
                 ssid,
                 password,
@@ -408,8 +417,14 @@ class SnicBeeTelemetryApp:
                 self.wifi = wifi
                 return True
 
-        self.system.log("wifi all candidates failed")
+        self.log("wifi all candidates failed")
         return False
+
+    def log(self, msg):
+        if self.system is not None:
+            self.system.log(msg)
+        else:
+            print("[snic_bee][{}] {}".format(time.ticks_ms(), msg))
 
 
 def main():
@@ -419,23 +434,30 @@ def main():
         # ESP32 常见可选值：80MHz / 160MHz / 240MHz。
         try:
             machine.freq(160000000)
-            app.system.log("cpu freq set to 160MHz for thermal control")
+            app.log("cpu freq set to 160MHz for thermal control")
         except Exception as e:
-            app.system.log("cpu freq keep default: {}".format(e))
+            app.log("cpu freq keep default: {}".format(e))
 
-        app.system.log("telemetry app start")
+        app.log("telemetry app start")
+        app.log(
+            "feature switch: distance={}, water={}".format(
+                1 if ENABLE_DISTANCE_SENSOR else 0,
+                1 if ENABLE_WATER_SENSOR else 0,
+            )
+        )
 
         # First WiFi connect (blocking) - upload only after WiFi is ready.
-        app.system.log("wifi connecting...")
+        app.log("wifi connecting...")
         while not app.connect_wifi_in_order():
-            app.system.log("wifi connect failed, retry all in {}s".format(WIFI_ROTATE_BACKOFF_S))
+            app.log("wifi connect failed, retry all in {}s".format(WIFI_ROTATE_BACKOFF_S))
             time.sleep(WIFI_ROTATE_BACKOFF_S)
 
-        app.system.startup_self_test()
+        if app.system is not None:
+            app.system.startup_self_test()
 
         while True:
-            distance_cm = app.system.step()
-            water_event = app.water.poll()
+            distance_cm = app.system.step() if app.system is not None else None
+            water_event = app.water.poll() if app.water is not None else False
             now = time.ticks_ms()
 
             # Water event: upload immediately
@@ -445,7 +467,7 @@ def main():
                     {
                         "type": "event",
                         "event": "water_drop",
-                        "water_active": 1 if app.water.is_active() else 0,
+                        "water_active": 1 if (app.water is not None and app.water.is_active()) else 0,
                         "distance_cm": None if distance_cm is None else round(distance_cm, 1),
                     }
                 )
@@ -459,7 +481,9 @@ def main():
                     {
                         "type": "telemetry",
                         "distance_cm": None if distance_cm is None else round(distance_cm, 1),
-                        "water_active": 1 if app.water.is_active() else 0,
+                        "water_active": 1 if (app.water is not None and app.water.is_active()) else 0,
+                        "distance_enabled": 1 if app.system is not None else 0,
+                        "water_enabled": 1 if app.water is not None else 0,
                         "wifi_ip": app.wifi.get_ip(),
                     }
                 )
