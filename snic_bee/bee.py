@@ -413,8 +413,30 @@ class SnicBeeTelemetryApp:
         if not getattr(self, "upload_enabled", False):
             return False
         if not self._ensure_wifi():
+            try:
+                self.log(
+                    "upload skip: wifi not ready type={} distance_cm={}".format(
+                        payload.get("type", "unknown"),
+                        payload.get("distance_cm", None),
+                    )
+                )
+            except Exception:
+                pass
             return False
-        return self.uploader.post_json(payload)
+        ok = self.uploader.post_json(payload)
+        try:
+            self.log(
+                "upload {}: type={} distance_cm={} water_active={} wifi_ip={}".format(
+                    "ok" if ok else "failed",
+                    payload.get("type", "unknown"),
+                    payload.get("distance_cm", None),
+                    payload.get("water_active", None),
+                    self.wifi.get_ip(),
+                )
+            )
+        except Exception:
+            pass
+        return ok
 
     def connect_wifi_in_order(self):
         try:

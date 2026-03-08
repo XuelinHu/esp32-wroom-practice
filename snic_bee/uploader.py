@@ -27,11 +27,13 @@ class HTTPUploader:
         self.path = path if path.startswith("/") else "/" + path
         self.timeout_s = int(timeout_s)
         self.log_prefix = log_prefix
+        self._req_seq = 0
 
     def _log(self, msg):
         print("{} {}".format(self.log_prefix, msg))
 
     def post_json(self, payload):
+        self._req_seq += 1
         body = json.dumps(payload)
         if not isinstance(body, (bytes, bytearray)):
             body = body.encode("utf-8")
@@ -41,6 +43,12 @@ class HTTPUploader:
         try:
             s.settimeout(self.timeout_s)
             s.connect(addr)
+
+            started_ms = None
+            try:
+                started_ms = time.ticks_ms()
+            except Exception:
+                started_ms = None
 
             req = (
                 b"POST "
@@ -66,11 +74,51 @@ class HTTPUploader:
                 resp = b""
 
             ok = (b" 200 " in resp) or (b" 201 " in resp) or (b" 204 " in resp)
+            status_line = b""
+            try:
+                status_line = (resp.split(b"\r\n", 1)[0] if resp else b"")[:80]
+            except Exception:
+                status_line = b""
+
             if not ok and resp:
                 self._log("non-2xx: {}".format(resp.split(b"\r\n")[0]))
+            elif ok:
+                cost_ms = None
+                try:
+                    if started_ms is not None:
+                        cost_ms = time.ticks_diff(time.ticks_ms(), started_ms)
+                except Exception:
+                    cost_ms = None
+
+                extra = ""
+                if cost_ms is not None:
+                    extra = " cost_ms={}".format(cost_ms)
+                if status_line:
+                    self._log(
+                        "ok seq={} {}:{}{} bytes={}{} status={}".format(
+                            self._req_seq,
+                            self.server_ip,
+                            self.server_port,
+                            self.path,
+                            len(body),
+                            extra,
+                            status_line,
+                        )
+                    )
+                else:
+                    self._log(
+                        "ok seq={} {}:{}{} bytes={}{}".format(
+                            self._req_seq,
+                            self.server_ip,
+                            self.server_port,
+                            self.path,
+                            len(body),
+                            extra,
+                        )
+                    )
             return ok
         except Exception as e:
-            self._log("post failed: {}".format(e))
+            self._log("post failed seq={}: {}".format(self._req_seq, e))
             return False
         finally:
             try:
