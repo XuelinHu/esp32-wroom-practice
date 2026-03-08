@@ -1,7 +1,6 @@
 python -m mpremote connect COM9 fs cp "D:\workspace\things\esp32-wroom-practice\snic_bee\bee.py" :
 python -m mpremote connect COM9 fs cp "D:\workspace\things\esp32-wroom-practice\snic_bee\boot.py" :
 python -m mpremote connect COM9 fs cp "D:\workspace\things\esp32-wroom-practice\snic_bee\main.py" :
-python -m mpremote connect COM9 fs cp "D:\workspace\things\esp32-wroom-practice\snic_bee\secrets.py" :
 python -m mpremote connect COM9 fs cp "D:\workspace\things\esp32-wroom-practice\snic_bee\uploader.py" :
 python -m mpremote connect COM9 fs cp "D:\workspace\things\esp32-wroom-practice\snic_bee\wifi_sta.py" :
 python -m mpremote connect COM9 fs cp "D:\workspace\things\esp32-wroom-practice\snic_bee\__init__.py" :
