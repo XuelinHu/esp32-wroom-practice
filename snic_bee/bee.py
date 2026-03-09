@@ -15,13 +15,13 @@ ENABLE_WATER_SENSOR = False
 # WiFi/HTTP 上传开关（默认不上传）
 # - 默认不会连接 WiFi / 不会 HTTP 上传
 # - 如需上传：设 `ENABLE_UPLOAD_WIFI=True` 或在启动时确认
-ENABLE_UPLOAD_WIFI = True
+ENABLE_UPLOAD_WIFI = False
 UPLOAD_CONFIRM_ON_BOOT = False
 UPLOAD_CONFIRM_TIMEOUT_S = 8
 
 # WiFi auto-connect on boot (upload can still stay disabled).
 # This is for quickly verifying "联网成功" via WiFi logs (IP/RSSI/status).
-ENABLE_WIFI_ON_BOOT = True
+ENABLE_WIFI_ON_BOOT = False
 
 # 开机蜂鸣（默认三声）
 ENABLE_BOOT_BEEP = True
