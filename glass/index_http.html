@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XIAO Sense | 语音与视频</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; color: #17202a; background: #eef1f4; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 18px; }
+    main { width: min(980px, 100%); margin: auto; }
+    header { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 14px; }
+    h1 { margin: 0; font-size: 24px; }
+    button, select { border: 1px solid #b8c2cc; border-radius: 5px; background: white; padding: 9px 12px; font: inherit; }
+    button { cursor: pointer; background: #165d9c; color: white; border-color: #165d9c; }
+    button.danger { background: #b42318; border-color: #b42318; }
+    button:disabled { cursor: wait; opacity: .55; }
+    section { background: white; border: 1px solid #d4dce3; border-radius: 6px; padding: 14px; margin: 12px 0; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .label { font-weight: 650; margin-bottom: 9px; }
+    #stream { display: block; width: 100%; max-height: 68vh; height: auto; background: #101820; border-radius: 4px; }
+    #status, .muted { color: #52606d; font-size: 14px; }
+    .record { border-top: 1px solid #e1e7ec; padding: 12px 0; }
+    .record:first-child { border-top: 0; }
+    .record-name { overflow-wrap: anywhere; font-weight: 600; margin-bottom: 7px; }
+    audio { display: block; width: 100%; }
+    .error { color: #b42318; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>XIAO Sense 语音与视频</h1>
+      <button id="refresh" type="button">刷新</button>
+    </header>
+    <section>
+      <div class="label">摄像头</div>
+      <canvas id="stream" width="160" height="120" aria-label="实时视频"></canvas>
+      <div class="toolbar" style="margin-top:10px">
+        <button id="capture" type="button">拍照</button>
+        <select id="size" aria-label="视频尺寸">
+          <option value="160x120" selected>160x120</option>
+          <option value="320x240">320x240</option>
+        </select>
+        <button id="applySize" type="button">应用尺寸</button>
+      </div>
+      <div id="cameraStatus" class="muted">正在读取摄像头状态...</div>
+    </section>
+    <section>
+      <div class="label">语音采集</div>
+      <div class="toolbar">
+        <button id="startVoice" type="button">开始录音</button>
+        <button id="stopVoice" class="danger" type="button" disabled>停止录音</button>
+      </div>
+      <div id="voiceStatus" class="muted">使用外接 INMP441，保存为 8kHz 16-bit 单声道 WAV。</div>
+      <div class="muted">当前版本负责采集语音；语音转文字需要另外接入 STT 服务。</div>
+    </section>
+    <section>
+      <div class="label">设备录音</div>
+      <div id="list" class="muted">正在读取录音列表...</div>
+    </section>
+    <div id="status" class="muted"></div>
+  </main>
+  <script>
+    const stream = document.querySelector('#stream');
+    const capture = document.querySelector('#capture');
+    const size = document.querySelector('#size');
+    const applySize = document.querySelector('#applySize');
+    const cameraStatus = document.querySelector('#cameraStatus');
+    const startVoice = document.querySelector('#startVoice');
+    const stopVoice = document.querySelector('#stopVoice');
+    const voiceStatus = document.querySelector('#voiceStatus');
+    const list = document.querySelector('#list');
+    const refresh = document.querySelector('#refresh');
+    const context = stream.getContext('2d', { alpha: false });
+    let streaming = true;
+
+    function dimensions(name) {
+      const values = name.split('x').map(Number);
+      return { width: values[0], height: values[1] };
+    }
+
+    async function drawFrame() {
+      if (!streaming) return;
+      try {
+        const response = await fetch('/frame.raw?ts=' + Date.now(), { cache: 'no-store' });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const raw = new Uint8Array(await response.arrayBuffer());
+        const { width, height } = dimensions(size.value);
+        if (raw.length !== width * height * 2) throw new Error('帧长度异常');
+        const image = context.createImageData(width, height);
+        let source = 0;
+        let target = 0;
+        for (; source < raw.length; source += 2, target += 4) {
+          const pixel = (raw[source] << 8) | raw[source + 1];
+          image.data[target] = ((pixel >> 11) & 31) << 3;
+          image.data[target + 1] = ((pixel >> 5) & 63) << 2;
+          image.data[target + 2] = (pixel & 31) << 3;
+          image.data[target + 3] = 255;
+        }
+        context.putImageData(image, 0, 0);
+      } catch (error) {
+        cameraStatus.textContent = '视频帧读取失败：' + error.message;
+      } finally {
+        setTimeout(drawFrame, 80);
+      }
+    }
+
+    async function jsonRequest(url, options) {
+      const response = await fetch(url, options);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+      return data;
+    }
+
+    async function updateStatus() {
+      try {
+        const data = await jsonRequest('/status', { cache: 'no-store' });
+        cameraStatus.textContent = '状态：' + data.camera.sensor + '，' + data.camera.framesize + '，已采集 ' + data.camera.frames + ' 帧';
+        updateVoice(data.voice);
+      } catch (error) {
+        cameraStatus.textContent = '状态读取失败：' + error.message;
+      }
+    }
+
+    function updateVoice(data) {
+      startVoice.disabled = data.active;
+      stopVoice.disabled = !data.active;
+      if (data.active) {
+        voiceStatus.textContent = '正在录音：' + data.bytes + ' bytes';
+        setTimeout(pollVoice, 500);
+      } else if (data.error) {
+        voiceStatus.textContent = '录音失败：' + data.error;
+        voiceStatus.className = 'error';
+      } else if (data.path) {
+        voiceStatus.textContent = '已保存：' + data.path;
+        voiceStatus.className = 'muted';
+        loadRecordings();
+      }
+    }
+
+    async function pollVoice() {
+      try { updateVoice(await jsonRequest('/api/voice/status', { cache: 'no-store' })); }
+      catch (error) { voiceStatus.textContent = '录音状态读取失败：' + error.message; }
+    }
+
+    async function startRecording() {
+      try { updateVoice(await jsonRequest('/api/voice/start', { method: 'POST' })); }
+      catch (error) { voiceStatus.textContent = '启动录音失败：' + error.message; }
+    }
+
+    async function stopRecording() {
+      try { updateVoice(await jsonRequest('/api/voice/stop', { method: 'POST' })); }
+      catch (error) { voiceStatus.textContent = '停止录音失败：' + error.message; }
+    }
+
+    async function loadRecordings() {
+      try {
+        const files = await jsonRequest('/api/recordings', { cache: 'no-store' });
+        list.replaceChildren();
+        if (!files.length) { list.textContent = '暂无录音。'; return; }
+        for (const name of files) {
+          const row = document.createElement('div');
+          row.className = 'record';
+          const label = document.createElement('div');
+          label.className = 'record-name';
+          label.textContent = name;
+          const audio = document.createElement('audio');
+          audio.controls = true;
+          audio.preload = 'none';
+          audio.src = '/recordings/' + encodeURIComponent(name);
+          row.append(label, audio);
+          list.append(row);
+        }
+      } catch (error) { list.textContent = '录音列表读取失败：' + error.message; }
+    }
+
+    capture.addEventListener('click', () => {
+      const link = document.createElement('a');
+      link.download = 'xiao-ov3660.png';
+      link.href = stream.toDataURL('image/png');
+      link.click();
+    });
+    applySize.addEventListener('click', async () => {
+      applySize.disabled = true;
+      try {
+        await jsonRequest('/api/camera?size=' + size.value, { cache: 'no-store' });
+        const next = dimensions(size.value);
+        stream.width = next.width;
+        stream.height = next.height;
+        updateStatus();
+      } catch (error) { cameraStatus.textContent = '尺寸设置失败：' + error.message; }
+      finally { applySize.disabled = false; }
+    });
+    startVoice.addEventListener('click', startRecording);
+    stopVoice.addEventListener('click', stopRecording);
+    refresh.addEventListener('click', () => { updateStatus(); loadRecordings(); });
+    updateStatus();
+    loadRecordings();
+    drawFrame();
+  </script>
+</body>
+</html>

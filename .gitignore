@@ -216,6 +216,7 @@ __marimo__/
 
 # Local secrets (WiFi/password/server IP etc.)
 snic_bee/secrets.py
+glass/arduino_glasses/secrets.h
 
 # Claude configuration
 .claude/

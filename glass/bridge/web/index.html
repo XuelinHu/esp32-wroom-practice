@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>智能眼镜本地桥接</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; color: #172126; background: #edf2f3; }
+    body { margin: 0; }
+    header { background: #173f49; color: #fff; padding: 14px 24px; }
+    h1 { margin: 0; font-size: 20px; font-weight: 650; }
+    main { width: min(1180px, calc(100% - 28px)); margin: 14px auto; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; }
+    section { background: #fff; border: 1px solid #ccd8da; border-radius: 6px; padding: 14px; }
+    h2 { margin: 0 0 10px; font-size: 16px; }
+    #stream { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: #111b1e; }
+    .camera-controls { display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: 8px; margin-top: 10px; }
+    select { width: 100%; box-sizing: border-box; padding: 9px; border: 1px solid #9aabad; border-radius: 4px; background: #fff; font: inherit; }
+    .camera-controls button { margin: 0; }
+    #status, #sd-status { margin: 10px 0 0; color: #506267; font-size: 14px; }
+    button { width: 100%; box-sizing: border-box; padding: 10px; margin: 0 0 8px; border: 1px solid #12606c; border-radius: 4px; background: #12606c; color: #fff; font: inherit; cursor: pointer; }
+    button.secondary { color: #12606c; background: #fff; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    #detections, #recordings { margin: 0; padding: 0; list-style: none; }
+    .entry { border-top: 1px solid #e0e8e9; padding: 9px 0; display: flex; justify-content: space-between; gap: 8px; align-items: center; font-size: 14px; }
+    .entry:first-child { border-top: 0; }
+    .entry button { width: auto; margin: 0; padding: 5px 8px; }
+    .muted { color: #62767b; font-size: 13px; }
+    audio { width: 100%; margin-top: 8px; }
+    @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header><h1>智能眼镜本地桥接</h1></header>
+  <main>
+    <section>
+      <h2>实时识别画面</h2>
+      <img id="stream" src="/api/stream" alt="等待摄像头画面">
+      <div class="camera-controls">
+        <select id="camera-resolution" aria-label="摄像头分辨率">
+          <option value="qvga">320 × 240</option>
+          <option value="vga">640 × 480</option>
+          <option value="svga">800 × 600</option>
+          <option value="xga" selected>1024 × 768（默认）</option>
+          <option value="hd">1280 × 720</option>
+          <option value="uxga">1600 × 1200</option>
+          <option value="qxga">2048 × 1536（最高）</option>
+        </select>
+        <button id="camera-apply" class="secondary">应用分辨率</button>
+      </div>
+      <p id="camera-status" class="muted">当前 1024 × 768</p>
+      <p id="status">正在连接设备</p>
+      <h2 style="margin-top:18px">当前识别</h2>
+      <ul id="detections"><li class="muted">等待视频帧</li></ul>
+    </section>
+    <div>
+      <section>
+        <h2>语音录音</h2>
+        <button id="record-start">开始录音</button>
+        <button id="record-stop" class="secondary" disabled>停止并保存</button>
+        <audio id="player" controls></audio>
+      </section>
+      <section style="margin-top:14px">
+        <h2>SD 卡</h2>
+        <button id="sd-test" class="secondary">写入并读回文本</button>
+        <p id="sd-status">等待设备状态</p>
+      </section>
+      <section style="margin-top:14px">
+        <h2>录音历史</h2>
+        <ul id="recordings"><li class="muted">暂无录音</li></ul>
+      </section>
+    </div>
+  </main>
+  <script>
+    const statusEl = document.querySelector('#status');
+    const detectionsEl = document.querySelector('#detections');
+    const recordingsEl = document.querySelector('#recordings');
+    const sdStatusEl = document.querySelector('#sd-status');
+    const player = document.querySelector('#player');
+    const startButton = document.querySelector('#record-start');
+    const stopButton = document.querySelector('#record-stop');
+    const sdButton = document.querySelector('#sd-test');
+    const cameraResolution = document.querySelector('#camera-resolution');
+    const cameraApply = document.querySelector('#camera-apply');
+    const cameraStatusEl = document.querySelector('#camera-status');
+    const stream = document.querySelector('#stream');
+
+    async function request(url, body) {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: body ? { 'Content-Type': 'application/json' } : {},
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || '请求失败');
+      return data;
+    }
+
+    function renderDetections(items) {
+      detectionsEl.replaceChildren();
+      if (!items.length) {
+        detectionsEl.innerHTML = '<li class="muted">未识别到目标</li>';
+        return;
+      }
+      items.forEach(item => {
+        const entry = document.createElement('li');
+        entry.className = 'entry';
+        entry.textContent = `${item.label} ${Math.round(item.confidence * 100)}%`;
+        detectionsEl.append(entry);
+      });
+    }
+
+    async function refreshRecordings() {
+      const files = await (await fetch('/api/recordings')).json();
+      recordingsEl.replaceChildren();
+      if (!files.length) {
+        recordingsEl.innerHTML = '<li class="muted">暂无录音</li>';
+        return;
+      }
+      files.forEach(file => {
+        const entry = document.createElement('li');
+        entry.className = 'entry';
+        const label = document.createElement('span');
+        label.innerHTML = `${file.name}<br><span class="muted">${file.created_at}</span>`;
+        const play = document.createElement('button');
+        play.textContent = '播放';
+        play.onclick = () => { player.src = file.url; player.play(); };
+        entry.append(label, play);
+        recordingsEl.append(entry);
+      });
+    }
+
+    async function refreshStatus() {
+      try {
+        const data = await (await fetch('/api/status')).json();
+        statusEl.textContent = `摄像头：${data.camera_connected ? '已连接' : '重连中'} | 麦克风：${data.audio_connected ? '已连接' : '重连中'} | 录音：${data.recording ? '进行中' : '未录制'}`;
+        sdStatusEl.textContent = data.sd_status;
+        cameraStatusEl.textContent = `当前 ${data.camera_resolution} · ${data.camera_status}`;
+        const [width, height] = data.camera_resolution.split('x').map(Number);
+        if (width && height) stream.style.aspectRatio = `${width} / ${height}`;
+        renderDetections(data.detections);
+      } catch (error) {
+        statusEl.textContent = error.message;
+      }
+      setTimeout(refreshStatus, 800);
+    }
+
+    startButton.onclick = async () => {
+      try {
+        await request('/api/record/start');
+        startButton.disabled = true;
+        stopButton.disabled = false;
+      } catch (error) { statusEl.textContent = error.message; }
+    };
+    stopButton.onclick = async () => {
+      try {
+        const data = await request('/api/record/stop');
+        if (data.last_recording) { player.src = data.last_recording; player.play(); }
+        await refreshRecordings();
+      } catch (error) { statusEl.textContent = error.message; }
+      startButton.disabled = false;
+      stopButton.disabled = true;
+    };
+    sdButton.onclick = async () => {
+      try { await request('/api/sd/test'); } catch (error) { sdStatusEl.textContent = error.message; }
+    };
+    cameraApply.onclick = async () => {
+      cameraApply.disabled = true;
+      try {
+        await request('/api/camera/resolution', { resolution: cameraResolution.value });
+      } catch (error) {
+        cameraStatusEl.textContent = error.message;
+      } finally {
+        setTimeout(() => { cameraApply.disabled = false; }, 800);
+      }
+    };
+
+    refreshStatus();
+    refreshRecordings();
+  </script>
+</body>
+</html>

@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ESP32 录音播放</title>
+  <style>
+    :root { color-scheme: light; font-family: Arial, sans-serif; }
+    body { margin: 0; padding: 24px; background: #f3f5f7; color: #1f2933; }
+    main { max-width: 720px; margin: 0 auto; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    h1 { margin: 0; font-size: 24px; }
+    button { border: 0; border-radius: 6px; padding: 10px 14px; background: #1769aa; color: white; cursor: pointer; }
+    button:disabled { background: #9aa5b1; cursor: wait; }
+    #stopRecord { background: #b42318; }
+    #stopPlayback { background: #b42318; }
+    #stopAbc { background: #b42318; }
+    #status { margin: 18px 0 10px; color: #52606d; }
+    #recordStatus { margin-top: 10px; color: #52606d; }
+    #playStatus { margin-top: 10px; color: #52606d; }
+    section { margin: 10px 0; padding: 14px; background: white; border: 1px solid #d9e2ec; border-radius: 6px; }
+    .name { margin-bottom: 10px; overflow-wrap: anywhere; font-weight: 600; }
+    audio { width: 100%; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>ESP32 录音播放</h1>
+      <button id="refresh" type="button">刷新列表</button>
+    </header>
+    <section>
+      <div class="name">Board recording</div>
+      <button id="startRecord" type="button">Start recording</button>
+      <button id="stopRecord" type="button" disabled>Stop recording</button>
+      <div id="recordStatus">Not recording</div>
+    </section>
+    <section>
+      <div class="name">ESP32 speaker</div>
+      <button id="playAlphabet" type="button">Play A-Z voice test</button>
+      <button id="stopPlayback" type="button" disabled>Stop playback</button>
+      <div id="playStatus">Not playing</div>
+    </section>
+    <section>
+      <div class="name">ABC music</div>
+      <button id="startAbc" type="button">Start ABC music</button>
+      <button id="stopAbc" type="button" disabled>Stop ABC</button>
+      <div id="abcStatus">Not playing</div>
+    </section>
+    <section>
+      <div class="name">播放电脑上的本地录音</div>
+      <input id="localFiles" type="file" accept="audio/wav,audio/mpeg,audio/*" multiple>
+      <div id="localList"></div>
+    </section>
+    <div id="status">正在读取 ESP32 录音列表...</div>
+    <div id="list"></div>
+  </main>
+  <script>
+    const status = document.querySelector('#status');
+    const list = document.querySelector('#list');
+    const localFiles = document.querySelector('#localFiles');
+    const localList = document.querySelector('#localList');
+    const refresh = document.querySelector('#refresh');
+    const startRecord = document.querySelector('#startRecord');
+    const stopRecord = document.querySelector('#stopRecord');
+    const recordStatus = document.querySelector('#recordStatus');
+    const playAlphabet = document.querySelector('#playAlphabet');
+    const stopPlayback = document.querySelector('#stopPlayback');
+    const playStatus = document.querySelector('#playStatus');
+    const startAbc = document.querySelector('#startAbc');
+    const stopAbc = document.querySelector('#stopAbc');
+    const abcStatus = document.querySelector('#abcStatus');
+    let recordPoll = null;
+    let recordRequestActive = false;
+    let playPoll = null;
+    let abcPoll = null;
+
+    function showLocalFiles(files) {
+      localList.replaceChildren();
+      for (const file of files) {
+        const row = document.createElement('div');
+        row.className = 'name';
+        row.textContent = file.name;
+        const audio = document.createElement('audio');
+        audio.controls = true;
+        audio.preload = 'none';
+        audio.src = URL.createObjectURL(file);
+        row.append(audio);
+        localList.append(row);
+      }
+    }
+
+    async function updateRecordStatus() {
+      if (recordPoll !== null) {
+        clearTimeout(recordPoll);
+        recordPoll = null;
+      }
+      try {
+        const response = await fetch('/api/record/status', { cache: 'no-store' });
+        const data = await response.json();
+        if (data.active) {
+          startRecord.disabled = true;
+          stopRecord.disabled = false;
+          recordStatus.textContent = 'Recording: ' + data.bytes + ' bytes';
+          recordPoll = setTimeout(updateRecordStatus, 500);
+          return;
+        }
+        startRecord.disabled = false;
+        stopRecord.disabled = true;
+        if (data.error) {
+          recordStatus.textContent = 'Recording failed: ' + data.error;
+        } else if (data.path) {
+          recordStatus.textContent = 'Saved: ' + data.path;
+          loadRecordings();
+        }
+      } catch (error) {
+        recordStatus.textContent = 'Status error: ' + error.message;
+      }
+    }
+
+    async function startBoardRecording() {
+      if (recordRequestActive) return;
+      recordRequestActive = true;
+      if (recordPoll !== null) {
+        clearTimeout(recordPoll);
+        recordPoll = null;
+      }
+      startRecord.disabled = true;
+      recordStatus.textContent = 'Starting recording...';
+      try {
+        const response = await fetch('/api/record/start', { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+        stopRecord.disabled = false;
+        updateRecordStatus();
+      } catch (error) {
+        startRecord.disabled = false;
+        stopRecord.disabled = true;
+        recordStatus.textContent = 'Start failed: ' + error.message;
+      } finally {
+        recordRequestActive = false;
+      }
+    }
+
+    async function stopBoardRecording() {
+      if (recordRequestActive) return;
+      recordRequestActive = true;
+      if (recordPoll !== null) {
+        clearTimeout(recordPoll);
+        recordPoll = null;
+      }
+      stopRecord.disabled = true;
+      recordStatus.textContent = 'Saving recording...';
+      try {
+        const response = await fetch('/api/record/stop', { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+        updateRecordStatus();
+      } catch (error) {
+        stopRecord.disabled = false;
+        recordStatus.textContent = 'Stop failed: ' + error.message;
+      } finally {
+        recordRequestActive = false;
+      }
+    }
+
+    async function updatePlayStatus() {
+      try {
+        const response = await fetch('/api/play/status', { cache: 'no-store' });
+        const data = await response.json();
+        if (data.active) {
+          stopPlayback.disabled = false;
+          playStatus.textContent = 'Playing on ESP32: ' + data.path;
+          playPoll = setTimeout(updatePlayStatus, 500);
+          return;
+        }
+        stopPlayback.disabled = true;
+        if (data.error) {
+          playStatus.textContent = 'Playback failed: ' + data.error;
+        } else if (data.path) {
+          playStatus.textContent = 'Playback finished: ' + data.path;
+        } else {
+          playStatus.textContent = 'Not playing';
+        }
+      } catch (error) {
+        playStatus.textContent = 'Playback status error: ' + error.message;
+      }
+    }
+
+    async function playBoardRecording(name) {
+      playStatus.textContent = 'Starting speaker playback...';
+      try {
+        const response = await fetch('/api/play/start/' + encodeURIComponent(name), { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+        stopPlayback.disabled = false;
+        updatePlayStatus();
+      } catch (error) {
+        playStatus.textContent = 'Playback start failed: ' + error.message;
+      }
+    }
+
+    async function stopBoardPlayback() {
+      stopPlayback.disabled = true;
+      playStatus.textContent = 'Stopping playback...';
+      try {
+        const response = await fetch('/api/play/stop', { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+        updatePlayStatus();
+      } catch (error) {
+        stopPlayback.disabled = false;
+        playStatus.textContent = 'Playback stop failed: ' + error.message;
+      }
+    }
+
+    async function updateAbcStatus() {
+      try {
+        const response = await fetch('/api/abc/status', { cache: 'no-store' });
+        const data = await response.json();
+        if (data.active) {
+          startAbc.disabled = true;
+          stopAbc.disabled = false;
+          abcStatus.textContent = 'ABC music is playing';
+          abcPoll = setTimeout(updateAbcStatus, 500);
+          return;
+        }
+        startAbc.disabled = false;
+        stopAbc.disabled = true;
+        abcStatus.textContent = data.error ? 'ABC failed: ' + data.error : 'ABC stopped';
+      } catch (error) {
+        abcStatus.textContent = 'ABC status error: ' + error.message;
+      }
+    }
+
+    async function startAbcMusic() {
+      startAbc.disabled = true;
+      abcStatus.textContent = 'Starting ABC music...';
+      try {
+        const response = await fetch('/api/abc/start', { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+        stopAbc.disabled = false;
+        updateAbcStatus();
+      } catch (error) {
+        startAbc.disabled = false;
+        stopAbc.disabled = true;
+        abcStatus.textContent = 'ABC start failed: ' + error.message;
+      }
+    }
+
+    async function stopAbcMusic() {
+      stopAbc.disabled = true;
+      abcStatus.textContent = 'Stopping ABC music...';
+      try {
+        const response = await fetch('/api/abc/stop', { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+        updateAbcStatus();
+      } catch (error) {
+        stopAbc.disabled = false;
+        abcStatus.textContent = 'ABC stop failed: ' + error.message;
+      }
+    }
+
+    async function loadRecordings() {
+      refresh.disabled = true;
+      status.textContent = '正在读取录音列表...';
+      list.replaceChildren();
+      try {
+        const response = await fetch('/api/list', { cache: 'no-store' });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const files = await response.json();
+        if (!files.length) {
+          status.textContent = '暂无录音，请先在菜单中选择 2 录音。';
+          return;
+        }
+        status.textContent = '共 ' + files.length + ' 个录音';
+        for (const name of files) {
+          const row = document.createElement('section');
+          const label = document.createElement('div');
+          label.className = 'name';
+          label.textContent = name;
+          const audio = document.createElement('audio');
+          audio.controls = true;
+          audio.preload = 'none';
+          audio.src = '/recordings/' + encodeURIComponent(name);
+          row.append(label, audio);
+          if (name.toLowerCase().endsWith('.wav')) {
+            const speakerButton = document.createElement('button');
+            speakerButton.type = 'button';
+            speakerButton.textContent = 'Play on ESP32 speaker';
+            speakerButton.addEventListener('click', () => playBoardRecording(name));
+            row.append(speakerButton);
+          }
+          list.append(row);
+        }
+      } catch (error) {
+        status.textContent = 'ESP32 录音列表暂不可用：' + error.message;
+      } finally {
+        refresh.disabled = false;
+      }
+    }
+
+    localFiles.addEventListener('change', () => showLocalFiles(localFiles.files));
+    startRecord.addEventListener('click', startBoardRecording);
+    stopRecord.addEventListener('click', stopBoardRecording);
+    playAlphabet.addEventListener('click', () => playBoardRecording('alphabet_announcement.wav'));
+    stopPlayback.addEventListener('click', stopBoardPlayback);
+    startAbc.addEventListener('click', startAbcMusic);
+    stopAbc.addEventListener('click', stopAbcMusic);
+    refresh.addEventListener('click', loadRecordings);
+    loadRecordings();
+  </script>
+</body>
+</html>

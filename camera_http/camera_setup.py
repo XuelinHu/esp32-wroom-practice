@@ -5,7 +5,8 @@ Camera Setup for ESP32-Cam
 import camera
 from micropython import const
 
-# 摄像头配置常量 PIN_PWDN    = const(0)  # power-down
+# 摄像头配置常量
+PIN_PWDN    = const(0)  # power-down
 PIN_RESET   = const(1)  # reset
 PIN_XCLK    = const(2)
 PIN_SIOD    = const(3)  # SDA
@@ -57,7 +58,9 @@ FRAMESIZE_P_HD    = const(16)  # 720x1280
 FRAMESIZE_P_3MP   = const(17)  # 864x1536
 FRAMESIZE_QXGA    = const(18)  # 2048x1536
 
-# XIAO ESP32-S3 OV2640 摄像头配置 XIAO_CONFIG = {
+# XIAO ESP32-S3 Sense 摄像头配置，兼容 OV2640/OV3660。
+# camera.init() 会通过 SCCB 自动识别实际传感器型号。
+XIAO_CONFIG = {
     PIN_PWDN: -1,
     PIN_RESET: -1,
     PIN_XCLK: 10,
