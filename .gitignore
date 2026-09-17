@@ -231,3 +231,14 @@ glass/arduino_glasses/secrets.h
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Build artifacts and locally-generated files
+# Untracked as of 2026-09-17 and would have added ~360 MB to the repository.
+build_*/
+glass/bridge/recordings/
+glass/firmware/
+
+# Nested clone of a third-party repository (cnadler86/micropython-camera-API),
+# vendored locally for firmware builds — not part of this project's source.
+# Replace with a proper git submodule if reproducible builds are needed.
+glass/firmware-src/
